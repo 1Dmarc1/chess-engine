@@ -183,22 +183,27 @@ const fn generate_pawn_attacks(square: u8, is_white: bool) -> Bitboard {
     let mut bb = Bitboard(0);
     let (rank, file) = util::square_to_rank_file(square);
 
-    if is_white && rank < 8 {
-        if file < 7 {
-            bb.set(util::rank_file_to_square(rank + 1, file + 1));
-        }
-        if file > 0 {
-            bb.set(util::rank_file_to_square(rank + 1, file - 1));
-        }
-    } else if rank > 0 {
-        if file < 7 {
-            bb.set(util::rank_file_to_square(rank - 1, file + 1));
-        }
-        if file > 0 {
-            bb.set(util::rank_file_to_square(rank - 1, file - 1));
+    if is_white{
+        if rank < 7 {
+            if file < 7 {
+                bb.set(util::rank_file_to_square(rank + 1, file + 1)); // Up right
+            }
+            if file > 0 {
+                bb.set(util::rank_file_to_square(rank + 1, file - 1)); // Up left
+            }
         }
     }
-
+    else{
+        if rank > 0{
+            if file < 7 {
+                bb.set(util::rank_file_to_square(rank - 1, file + 1)); // Down right
+            }
+            if file > 0 {
+                bb.set(util::rank_file_to_square(rank - 1, file - 1)); // Down left
+            }
+        }
+    }
+    
     bb
 }
 
