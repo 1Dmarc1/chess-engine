@@ -6,9 +6,6 @@ edition = "2024"
 [dependencies]
 nnue-rs = "0.4.2"
 
-[build]
-rustflags = ["-C", "target-cpu=native"]
-
 [profile.release]
 opt-level = 3
 lto = "fat"
