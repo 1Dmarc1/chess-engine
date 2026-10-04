@@ -1,16 +1,17 @@
 # Rübli
 
-A fast, UCI-compliant chess engine written in **Rust**.
+A fast chess engine written in **Rust**.
 
 ## Quick Start
 
-Clone the repository and build with native CPU optimizations for maximum performance:
+Clone the repository and build:
 
 ```bash
 git clone https://github.com/1Dmarc1/chess-engine.git
-cd ruebli
-RUSTFLAGS="-C target-cpu=native" cargo build --release
+cd chess-engine
+cargo build --release
 ```
+The compiled executable will be available at `target/release/ruebli`.
 
 ## Usage
 
