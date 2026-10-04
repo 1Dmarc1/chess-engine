@@ -1,6 +1,6 @@
 pub mod attacks;
 pub mod bishop_move_gen;
-pub mod king_move_gen;
+pub mod castle_move_gen;
 mod pawn_move_gen;
 pub mod rook_move_gen;
 
@@ -8,7 +8,7 @@ use crate::board::bitboard::Bitboard;
 use crate::board::game_state::GameState;
 use crate::movement::attacks::KING_ATTACKS;
 use crate::movement::bishop_move_gen::init_bishop_tables;
-use crate::movement::king_move_gen::generate_castle_moves;
+use crate::movement::castle_move_gen::generate_castle_moves;
 use crate::movement::rook_move_gen::init_rook_tables;
 use crate::types::MoveType::Quiet;
 use crate::types::piece::PieceColor;
