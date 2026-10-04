@@ -1,4 +1,4 @@
-# Rübli
+# Rübli -- Work in Progress
 
 A fast chess engine written in **Rust**.
 
