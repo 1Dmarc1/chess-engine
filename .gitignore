@@ -1,7 +1,5 @@
 /target
-.idea/chess_engine.iml
-.idea/modules.xml
-.idea/vcs.xml
+.idea/
 flamegraph.svg
 profile.json.gz
 /cargo/
