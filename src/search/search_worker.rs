@@ -24,7 +24,9 @@ pub struct SearchWorker<'a> {
     pub should_stop: Arc<AtomicBool>,
 
     pub stack: [StackEntry; globals::MAX_SEARCH_PLY],
-    pub accumulators: [Accumulator; globals::MAX_SEARCH_PLY],
+
+    pub accumulators: [Accumulator; globals::MAX_SEARCH_PLY], // On accumulator for each search depth
+    pub accumulator_map : [usize; globals::MAX_SEARCH_PLY], // Defines for which ply which accumulator should be accessed
 
     pub history: [[[i32; 64]; 64]; 2], // [Color][FromSquare][ToSquare]
 
@@ -48,6 +50,7 @@ impl<'a> SearchWorker<'a> {
             should_stop,
             stack: [StackEntry::default(); globals::MAX_SEARCH_PLY],
             accumulators,
+            accumulator_map: std::array::from_fn(|i| i),
             history: [[[0; 64]; 64]; 2],
             nodes: 0,
         }
@@ -59,9 +62,16 @@ impl<'a> SearchWorker<'a> {
         if !self.state.make_move_if_legal(&mv, &self.table.zobrist) {
             return false;
         }
-        let (left, right) = self.accumulators.split_at_mut(ply + 1);
+        let left = self.accumulator_map[ply]; // The current accumulator
+        self.accumulator_map[ply + 1] = ply + 1; // Ensure that after a potential null move the correct accumulator is used.
+
+
+        let (lower_half, upper_half) = self.accumulators.split_at_mut(ply + 1);
+        let base_acc = &lower_half[left];
+        let mut target_acc = &mut upper_half[0];
+
         self.network
-            .update(&parent_board, &self.state.board, &left[ply], &mut right[0]);
+            .update(&parent_board, &self.state.board, &base_acc, &mut target_acc);
         true
     }
 
@@ -73,7 +83,7 @@ impl<'a> SearchWorker<'a> {
     #[inline(always)]
     pub fn make_null_move(&mut self, ply: usize) {
         self.state.make_null_move(&self.table.zobrist);
-        self.accumulators[ply + 1] = self.accumulators[ply].clone(); // Copy the accumulator to ensure a valid state
+        self.accumulator_map[ply + 1] = self.accumulator_map[ply];
     }
 
     #[inline(always)]
@@ -83,8 +93,9 @@ impl<'a> SearchWorker<'a> {
 
     #[inline(always)]
     pub fn evaluate(&self, ply: usize) -> i32 {
+        let acc_idx = self.accumulator_map[ply];
         self.network
-            .evaluate_accumulator(&self.accumulators[ply], self.state.board.side_to_move())
+            .evaluate_accumulator(&self.accumulators[acc_idx], self.state.board.side_to_move())
     }
 
     #[inline(always)]
