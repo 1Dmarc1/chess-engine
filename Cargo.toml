@@ -1,0 +1,23 @@
+[package]
+name = "ruebli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nnue-rs = "0.4.2"
+
+[build]
+rustflags = ["-C", "target-cpu=native"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+debug = true
+
+[profile.bench]
+debug = true
+
+[profile.test]
+debug = true

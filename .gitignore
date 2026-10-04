@@ -1,0 +1,8 @@
+/target
+.idea/chess_engine.iml
+.idea/modules.xml
+.idea/vcs.xml
+flamegraph.svg
+profile.json.gz
+/cargo/
+Cargo.lock
