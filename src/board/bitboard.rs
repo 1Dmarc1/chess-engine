@@ -14,9 +14,7 @@ impl Bitboard {
     /// Sets the specified bit to true.
     #[inline(always)]
     pub const fn set(&mut self, square: u8) {
-        if square < 64 {
-            self.0 |= 1u64 << square;
-        }
+        self.0 |= 1u64 << square;
     }
 
     /// Clears all bits in the bitboard.
