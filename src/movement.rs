@@ -3,44 +3,20 @@ pub mod bishop_move_gen;
 pub mod castle_move_gen;
 mod pawn_move_gen;
 pub mod rook_move_gen;
+pub mod move_list;
 
 use crate::board::bitboard::Bitboard;
 use crate::board::game_state::GameState;
 use crate::movement::attacks::KING_ATTACKS;
 use crate::movement::bishop_move_gen::init_bishop_tables;
 use crate::movement::castle_move_gen::generate_castle_moves;
+use crate::movement::move_list::MoveList;
 use crate::movement::rook_move_gen::init_rook_tables;
 use crate::types::MoveType::Quiet;
 use crate::types::piece::PieceColor;
 use crate::types::{Move, MoveType, piece};
 
-#[derive(Copy, Clone)]
-pub struct MoveList {
-    pub moves: [Move; 128],
-    pub len: usize,
-}
 
-impl MoveList {
-    #[inline(always)]
-    pub fn push(&mut self, mov: Move) {
-        self.moves[self.len] = mov;
-        self.len += 1;
-    }
-
-    #[inline]
-    pub fn as_mut_slice(&mut self) -> &mut [Move] {
-        &mut self.moves[..self.len]
-    }
-}
-
-impl Default for MoveList {
-    fn default() -> Self {
-        Self {
-            moves: [Move::new(0, 0, 0, None, Quiet); 128],
-            len: 0,
-        }
-    }
-}
 
 /// Initializes all tables required for move generation.
 pub fn setup() {
