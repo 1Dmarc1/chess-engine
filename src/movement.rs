@@ -185,7 +185,7 @@ fn generate_king_moves<const QUIETS: bool>(
     extract_moves(from_square, piece_type, move_list, attacks, state);
 
     if QUIETS {
-        generate_castle_moves(from_square, state, move_list)
+        generate_castle_moves(state, move_list)
     }
 }
 

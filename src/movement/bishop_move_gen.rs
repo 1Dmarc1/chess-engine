@@ -4,7 +4,7 @@ use std::arch::x86_64::_pext_u64;
 
 /// Precomputed lookup table mapping `(square, pext_index)` to bishop attack bitboards.
 /// This is initialized during engine startup.
-pub static mut BISHOP_ATTACK_TABLE: [[Bitboard; 1024]; 64] = [[Bitboard(0); 1024]; 64];
+static mut BISHOP_ATTACK_TABLE: [[Bitboard; 1024]; 64] = [[Bitboard(0); 1024]; 64];
 
 /// Precomputed blocker masks for bishop attack generation.
 const BISHOP_MASKS: [Bitboard; 64] = {
