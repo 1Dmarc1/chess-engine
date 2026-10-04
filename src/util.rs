@@ -1,9 +1,11 @@
+#[inline(always)]
 pub const fn square_to_rank_file(square: u8) -> (u8, u8) {
     let rank = square / 8;
     let file = square % 8;
     (rank, file)
 }
 
+#[inline(always)]
 pub const fn rank_file_to_square(rank: u8, file: u8) -> u8 {
     rank * 8 + file
 }
