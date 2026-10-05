@@ -5,7 +5,7 @@ const PIECE_VALUES: [i32; 6] = [
     320,    // Knight
     330,    // Bishop
     500,    // Rook
-    900,    // Queen
+    900,    // Queen 
     20_000, // King
 ];
 

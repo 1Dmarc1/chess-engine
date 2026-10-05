@@ -1,7 +1,7 @@
 use crate::board::game_state::GameState;
 use crate::board::transposition_table::{EntryFlag, TTEntry, TranspositionTable};
 use crate::globals;
-use crate::globals::{INFINITY, MATE_SCORE, NO_SQUARE};
+use crate::globals::{INFINITY, MATE_SCORE};
 use crate::search::evaluation;
 use crate::search::lmr::get_lmr;
 use crate::search::move_picker::MovePicker;
@@ -296,7 +296,7 @@ impl<'a> SearchWorker<'a> {
         }
 
         let in_check = self.state.is_in_check(self.state.board.side_to_move);
-        let static_eval; // TODO : Shouldn't be done when in check
+        let static_eval;
         let mut best_move = None;
         let mut best_value;
 
@@ -316,27 +316,19 @@ impl<'a> SearchWorker<'a> {
         }
 
         let mut picker = if in_check {
-            MovePicker::new(tt_move, None, None)
+            MovePicker::new(tt_move, None, None) // In check all possible moves are evaluated
         } else {
             MovePicker::new_quiescence(tt_move)
         };
 
         while let Some(mv) = picker.next_move(self) {
-            if !in_check{
-                // Delta pruning
-                let cap_val = match mv.captured() {
-                    Some(piece) => evaluation::get_piece_score(piece),
-                    None => 0,
-                };
-                if static_eval + cap_val + 200 < alpha && !mv.is_promotion() {
+            if !in_check {
+                const SEE_MARGIN: i32 = 200;
+                let threshold = (alpha - static_eval - SEE_MARGIN).max(0);
+                if !mv.is_promotion() && !self.state.is_move_greater_equal(mv, threshold) {
                     continue;
                 }
-
-                // Static exchange evaluation (SEE)
-                if !self.state.is_move_greater_equal(mv, 0) {
-                    continue;
-                }
-            }
+            }   
 
             if !self.make_move(mv, ply) {
                 continue; // Illegal move continue

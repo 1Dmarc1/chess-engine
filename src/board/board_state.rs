@@ -72,9 +72,7 @@ impl BoardState {
         }
         None
     }
-
-
-
+    
     pub fn print_board(&self) {
         println!("  +-----------------+");
         // Loop from rank 7 down to 0 (Rank 8 down to Rank 1)
