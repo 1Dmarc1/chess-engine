@@ -372,11 +372,7 @@ impl GameState {
 
     #[inline]
     /// Returns true iff the move's material gain is bigger or equal to threshold.
-    pub fn is_move_greater_equal(&self, mv: &Move, threshold: i32) -> bool {
-        if mv.move_type() == MoveType::EnPassant {
-            return 0 >= threshold;
-        }
-
+    pub fn is_move_greater_equal(&self, mv: Move, threshold: i32) -> bool {
 
         // What can we gain from that move
         let cap_val = match mv.captured() {
@@ -384,16 +380,21 @@ impl GameState {
             None => 0,
         };
 
+        let attacker_val = evaluation::get_piece_score(mv.piece_type());
+        if cap_val - attacker_val >= threshold {
+            return true;
+        }
+
         let mut swap = cap_val - threshold;
         if swap < 0 {
-            return false; // Its not worth capturing the piece
+            return false; // Initial capture doesn't even reach threshold
         }
 
         // What do we risk losing next
         let next_victim = mv.landed_piece();
         swap -= evaluation::get_piece_score(next_victim);
         if swap >= 0 {
-            return true; // Even when loosing out piece it's still worth it
+            return true; // Even if we lose our piece, we still meet/exceed threshold
         }
 
         // Remove the initial attacker
@@ -405,7 +406,7 @@ impl GameState {
 
         loop {
             let attackers = self.board.all_attackers_to::<true>(mv.to(), occupied, self.occupancy[side as usize]) & occupied;
-            if attackers.0 == 0 {
+            if attackers.is_empty() {
                 break;
             }
 
@@ -415,7 +416,7 @@ impl GameState {
             };
 
             occupied.clear(attacker_sq);
-            let next_victim = piece_type; // Replaced mut declaration above
+            let next_victim = piece_type;
 
             swap = -swap - 1 - evaluation::get_piece_score(next_victim);
             res = !res;
