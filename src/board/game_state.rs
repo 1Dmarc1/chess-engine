@@ -1,10 +1,10 @@
-use nnue_rs::Piece;
 use crate::board::bitboard::Bitboard;
 use crate::board::board_state::BoardState;
 use crate::board::fen_parser::{ParseError, parse_fen};
 use crate::board::history::HistoryStack;
 use crate::board::transposition_table::Zobrist;
 use crate::search::evaluation;
+use crate::search::search_worker::NNUEDiff;
 use crate::types::piece::PieceColor;
 use crate::types::{CASTLING_MASKS, Move, MoveType, piece};
 
@@ -70,14 +70,14 @@ impl GameState {
         false
     }
 
-    pub fn make_move_if_legal(&mut self, mv: &Move, zobrist: &Zobrist) -> bool {
-        self.make_move(mv, zobrist);
+    pub fn make_move_if_legal(&mut self, mv: &Move, zobrist: &Zobrist) -> (bool, NNUEDiff) {
+        let diff = self.make_move(mv, zobrist);
 
         if self.is_in_check(!self.board.side_to_move) {
             self.undo_move(mv);
-            return false;
+            return (false, diff);
         }
-        true
+        (true, diff)
     }
 
     pub fn make_null_move(&mut self, zobrist: &Zobrist) {
@@ -106,7 +106,9 @@ impl GameState {
         }
     }
 
-    fn make_move(&mut self, mv: &Move, zobrist: &Zobrist) {
+    fn make_move(&mut self, mv: &Move, zobrist: &Zobrist) -> NNUEDiff {
+        let mut diff = NNUEDiff::new();
+
         self.push_to_history_stack(); // Save current state to stack array
 
         if self.board.side_to_move == PieceColor::Black {
@@ -138,16 +140,16 @@ impl GameState {
             } else {
                 mv.to()
             };
-            self.remove_piece(cap_sq, captured_piece, zobrist);
+            self.remove_piece(cap_sq, captured_piece, zobrist, &mut diff);
         }
 
         // Move the main piece
         if mv.is_promotion(){
-            self.remove_piece(from, piece_type, zobrist);
-            self.put_piece(to, mv.landed_piece(), zobrist);
+            self.remove_piece(from, piece_type, zobrist, &mut diff);
+            self.put_piece(to, mv.landed_piece(), zobrist, &mut diff);
         }
         else{
-            self.move_piece(from, to, piece_type, zobrist);
+            self.move_piece(from, to, piece_type, zobrist, &mut diff);
         }
 
         // Handle Special moves
@@ -167,7 +169,7 @@ impl GameState {
                 } else {
                     (piece::B_ROOK, 63, 61)
                 };
-                self.move_piece(r_from, r_to, r_type, zobrist);
+                self.move_piece(r_from, r_to, r_type, zobrist, &mut diff);
             }
             MoveType::QueenCastle => {
                 let (r_type, r_from, r_to) = if self.board.side_to_move == PieceColor::White {
@@ -175,7 +177,7 @@ impl GameState {
                 } else {
                     (piece::B_ROOK, 56, 59)
                 };
-                self.move_piece(r_from, r_to, r_type, zobrist);
+                self.move_piece(r_from, r_to, r_type, zobrist, &mut diff);
             }
             _ => {}
         }
@@ -189,6 +191,8 @@ impl GameState {
         // Toggle Side
         self.board.side_to_move = !self.board.side_to_move;
         self.hash ^= zobrist.side_key;
+
+        diff
     }
 
     pub fn undo_move(&mut self, mv: &Move) {
@@ -465,7 +469,7 @@ impl GameState {
 // --- Internal helpers
 impl GameState{
     #[inline(always)]
-    fn put_piece(&mut self, sq : u8, piece: usize, zobrist: &Zobrist) {
+    fn put_piece(&mut self, sq : u8, piece: usize, zobrist: &Zobrist, diff : &mut NNUEDiff) {
         let color_idx = (piece >= 6) as usize;
 
         self.board.pieces[piece].set(sq);
@@ -473,24 +477,28 @@ impl GameState{
         self.occupancy[color_idx].set(sq);
         self.occupancy[2].set(sq);
 
-        self.hash ^= zobrist.piece_keys[piece][sq as usize]
+        self.hash ^= zobrist.piece_keys[piece][sq as usize];
+
+        diff.push_added(sq, piece);
     }
 
     #[inline(always)]
-    fn remove_piece(&mut self, sq : u8, piece : usize, zobrist: &Zobrist) {
+    fn remove_piece(&mut self, sq : u8, piece : usize, zobrist: &Zobrist, diff : &mut NNUEDiff) {
         let color_idx = (piece >= 6) as usize;
 
         self.board.pieces[piece].clear(sq);
         self.occupancy[color_idx].clear(sq);
         self.occupancy[2].clear(sq);
 
-        self.hash ^= zobrist.piece_keys[piece][sq as usize]
+        self.hash ^= zobrist.piece_keys[piece][sq as usize];
+
+        diff.push_removed(sq, piece);
     }
 
     #[inline(always)]
-    fn move_piece(&mut self, from: u8, to :u8, piece : usize, zobrist: &Zobrist) {
-        self.remove_piece(from, piece, zobrist);
-        self.put_piece(to, piece, zobrist);
+    fn move_piece(&mut self, from: u8, to :u8, piece : usize, zobrist: &Zobrist, diff : &mut NNUEDiff) {
+        self.remove_piece(from, piece, zobrist, diff);
+        self.put_piece(to, piece, zobrist, diff);
     }
 
 }

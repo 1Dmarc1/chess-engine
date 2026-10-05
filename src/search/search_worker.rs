@@ -6,7 +6,7 @@ use crate::search::evaluation;
 use crate::search::move_picker::MovePicker;
 use crate::types::piece::PieceColor;
 use crate::types::{Move, piece};
-use nnue_rs::{Accumulator, Board, Network};
+use nnue_rs::{Accumulator, Board, Color, Network, Piece, PieceKind};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::search::lmr::get_lmr;
@@ -59,7 +59,9 @@ impl<'a> SearchWorker<'a> {
     #[inline(always)]
     pub fn make_move(&mut self, mv: Move, ply: usize) -> bool {
         let parent_board = self.state.board;
-        if !self.state.make_move_if_legal(&mv, &self.table.zobrist) {
+
+        let res = self.state.make_move_if_legal(&mv, &self.table.zobrist);
+        if !res.0 {
             return false;
         }
         let left = self.accumulator_map[ply]; // The current accumulator
@@ -70,8 +72,8 @@ impl<'a> SearchWorker<'a> {
         let base_acc = &lower_half[left];
         let mut target_acc = &mut upper_half[0];
 
-        self.network
-            .update(&parent_board, &self.state.board, &base_acc, &mut target_acc);
+
+        self.network.update_changes(&parent_board, &self.state.board, res.1.get_removed(), res.1.get_added(),  &base_acc, &mut target_acc);
         true
     }
 
@@ -339,5 +341,74 @@ impl<'a> SearchWorker<'a> {
             alpha = alpha.max(score);
         }
         best_value
+    }
+}
+
+
+#[derive(Copy, Clone)]
+pub struct NNUEDiff{
+    pub removed: [(u8, Piece); 2],
+    pub removed_len: usize,
+    pub added: [(u8, Piece); 2],
+    pub added_len: usize,
+}
+
+impl NNUEDiff {
+
+    #[inline(always)]
+    pub fn new() -> NNUEDiff {
+        NNUEDiff{
+            removed: [(0, Piece::new(Color::White, PieceKind::Pawn)); 2],
+            removed_len: 0,
+            added: [(0, Piece::new(Color::White, PieceKind::Pawn)); 2],
+            added_len: 0,
+        }
+    }
+
+    #[inline(always)]
+    pub fn get_removed(&self) -> &[(u8, Piece)]{
+        &self.removed[..self.removed_len]
+    }
+
+    #[inline(always)]
+    pub fn get_added(&self) -> &[(u8, Piece)] {
+        &self.added[..self.added_len]
+    }
+
+    #[inline(always)]
+    pub fn push_removed(&mut self, sq : u8, piece : usize){
+        self.removed[self.removed_len] = (sq, Self::piece_to_nnue_piece(piece));
+        self.removed_len += 1;
+    }
+
+    #[inline(always)]
+    pub fn push_added(&mut self, sq : u8, piece : usize){
+        self.added[self.added_len] = (sq, Self::piece_to_nnue_piece(piece));
+        self.added_len += 1;
+    }
+
+    #[inline(always)]
+    pub fn clear(&mut self){
+        self.removed_len = 0;
+        self.added_len = 0;
+    }
+
+    #[inline(always)]
+    pub fn piece_to_nnue_piece(piece : usize) -> Piece {
+        const MAP: [Piece; 12] = [
+            Piece { kind: PieceKind::Pawn, color: Color::White },
+            Piece { kind: PieceKind::Knight, color: Color::White },
+            Piece { kind: PieceKind::Bishop, color: Color::White },
+            Piece { kind: PieceKind::Rook, color: Color::White },
+            Piece { kind: PieceKind::Queen, color: Color::White },
+            Piece { kind: PieceKind::King, color: Color::White },
+            Piece { kind: PieceKind::Pawn, color: Color::Black },
+            Piece { kind: PieceKind::Knight, color: Color::Black },
+            Piece { kind: PieceKind::Bishop, color: Color::Black },
+            Piece { kind: PieceKind::Rook, color: Color::Black },
+            Piece { kind: PieceKind::Queen, color: Color::Black },
+            Piece { kind: PieceKind::King, color: Color::Black },
+        ];
+        MAP[piece]
     }
 }

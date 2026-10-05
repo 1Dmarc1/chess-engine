@@ -14,7 +14,7 @@ pub fn perft(state: &mut GameState, depth: usize, zobrist: &Zobrist) -> u64 {
     let mut total_nodes = 0;
 
     for mv in move_list.as_mut_slice() {
-        if !state.make_move_if_legal(mv, &zobrist) {
+        if !state.make_move_if_legal(mv, &zobrist).0 {
             continue;
         }
         let nodes = perft(state, depth - 1, zobrist);
@@ -64,7 +64,7 @@ pub fn divide(state: &mut GameState, depth: usize, zobrist: &Zobrist) -> u64 {
     let mut total_nodes = 0;
 
     for mv in move_list.as_mut_slice() {
-        if !state.make_move_if_legal(mv, &zobrist) {
+        if !state.make_move_if_legal(mv, &zobrist).0 {
             continue;
         }
         let nodes = perft(state, depth - 1, zobrist);
