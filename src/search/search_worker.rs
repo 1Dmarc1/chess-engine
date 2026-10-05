@@ -1,15 +1,15 @@
 use crate::board::game_state::GameState;
-use crate::board::transposition_table::{EntryFlag, TranspositionTable};
+use crate::board::transposition_table::{EntryFlag, TTEntry, TranspositionTable};
 use crate::globals;
-use crate::globals::INFINITY;
+use crate::globals::{INFINITY, MATE_SCORE, NO_SQUARE};
 use crate::search::evaluation;
+use crate::search::lmr::get_lmr;
 use crate::search::move_picker::MovePicker;
 use crate::types::piece::PieceColor;
 use crate::types::{Move, piece};
 use nnue_rs::{Accumulator, Board, Color, Network, Piece, PieceKind};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::search::lmr::get_lmr;
 
 #[derive(Clone, Copy, Default)]
 pub struct StackEntry {
@@ -21,15 +21,13 @@ pub struct SearchWorker<'a> {
     pub state: GameState,
     pub table: Arc<TranspositionTable>,
     pub network: &'a Network,
+
     pub should_stop: Arc<AtomicBool>,
 
     pub stack: [StackEntry; globals::MAX_SEARCH_PLY],
-
     pub accumulators: [Accumulator; globals::MAX_SEARCH_PLY], // On accumulator for each search depth
-    pub accumulator_map : [usize; globals::MAX_SEARCH_PLY], // Defines for which ply which accumulator should be accessed
-
-    pub history: [[[i32; 64]; 64]; 2], // [Color][FromSquare][ToSquare]
-
+    pub accumulator_map: [usize; globals::MAX_SEARCH_PLY], // Defines for which ply which accumulator should be accessed
+    pub history: [[[i32; 64]; 64]; 2],                     // [Color][FromSquare][ToSquare]
     pub nodes: u64,
 }
 
@@ -67,13 +65,18 @@ impl<'a> SearchWorker<'a> {
         let left = self.accumulator_map[ply]; // The current accumulator
         self.accumulator_map[ply + 1] = ply + 1; // Ensure that after a potential null move the correct accumulator is used.
 
-
         let (lower_half, upper_half) = self.accumulators.split_at_mut(ply + 1);
         let base_acc = &lower_half[left];
         let mut target_acc = &mut upper_half[0];
 
-
-        self.network.update_changes(&parent_board, &self.state.board, res.1.get_removed(), res.1.get_added(),  &base_acc, &mut target_acc);
+        self.network.update_changes(
+            &parent_board,
+            &self.state.board,
+            res.1.get_removed(),
+            res.1.get_added(),
+            &base_acc,
+            &mut target_acc,
+        );
         true
     }
 
@@ -116,12 +119,8 @@ impl<'a> SearchWorker<'a> {
 
     #[inline(always)]
     pub fn is_time_up(&self) -> bool {
-        if (self.nodes & 2047) == 0 {
-            return self.should_stop.load(Ordering::Relaxed);
-        }
-        false
+        self.should_stop.load(Ordering::Relaxed)
     }
-
 
     pub fn negamax(&mut self, depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
         if ply >= globals::MAX_SEARCH_PLY - 1 {
@@ -142,21 +141,13 @@ impl<'a> SearchWorker<'a> {
 
         // Transposition table lookup
         let mut tt_move = None;
-        if let Some(entry) = self.table.probe(self.state.hash) {
-            tt_move = Some(entry.best_move());
-            if entry.depth() as i32 >= depth {
-                let entry_score = entry.score(ply);
-                match entry.flag() {
-                    EntryFlag::Exact => return entry_score as i32,
-                    EntryFlag::LowerBound if (entry_score as i32) >= beta => {
-                        return entry_score as i32;
-                    }
-                    EntryFlag::UpperBound if (entry_score as i32) <= alpha => {
-                        return entry_score as i32;
-                    }
-                    _ => {}
-                }
+        let tt_entry = self.tt_probe();
+        if let Some(entry) = tt_entry {
+            let cutoff_score = entry.cutoff_score(depth, alpha, beta, ply);
+            if let Some(score) = cutoff_score {
+                return score;
             }
+            tt_move = Some(entry.best_move());
         }
 
         let in_check = self.state.is_in_check(self.state.board.side_to_move);
@@ -226,7 +217,7 @@ impl<'a> SearchWorker<'a> {
             {
                 // Search at a reduced depth with a zero window
                 let reduction = get_lmr(depth, legal_moves_played);
-                eval = -self.negamax(depth - 1 - reduction, ply + 1,-alpha - 1, -alpha);
+                eval = -self.negamax(depth - 1 - reduction, ply + 1, -alpha - 1, -alpha);
 
                 // If the reduced search beats alpha, re-search it at full depth
                 if eval > alpha {
@@ -239,7 +230,7 @@ impl<'a> SearchWorker<'a> {
 
             self.undo_move(mv);
 
-            if self.is_time_up(){
+            if self.is_time_up() {
                 return 0;
             }
 
@@ -253,11 +244,12 @@ impl<'a> SearchWorker<'a> {
                 // Save Killer Moves & History on Cutoff
                 if mv.captured().is_none() && !mv.is_promotion() {
                     self.update_killers(ply, mv);
-                    self.update_history( // Remember that this move was good and caused a beta cutoff
-                                         self.state.board.side_to_move as usize,
-                                           mv.from() as usize,
-                                           mv.to() as usize,
-                                           depth,
+                    self.update_history(
+                        // Remember that this move was good and caused a beta cutoff
+                        self.state.board.side_to_move as usize,
+                        mv.from() as usize,
+                        mv.to() as usize,
+                        depth,
                     );
                 }
                 break;
@@ -275,16 +267,7 @@ impl<'a> SearchWorker<'a> {
 
         // Store in Transposition Table
         if let Some(mv) = best_move {
-            let flag = if max_eval >= beta {
-                EntryFlag::LowerBound
-            } else if max_eval <= orig_alpha {
-                EntryFlag::UpperBound
-            } else {
-                EntryFlag::Exact
-            };
-            self
-                .table
-                .store(self.state.hash, depth as u32, max_eval, flag, mv, ply);
+            self.tt_store(orig_alpha, beta, depth as u32, ply, mv, max_eval);
         }
 
         max_eval
@@ -292,61 +275,131 @@ impl<'a> SearchWorker<'a> {
 
     /// Tactical Quiescence Search
     pub fn quiescence(&mut self, mut alpha: i32, beta: i32, ply: usize) -> i32 {
-        if ply >= globals::MAX_SEARCH_PLY - 1 {
-            return self.evaluate(ply);
-        }
+        self.nodes += 1;
         if self.is_time_up() {
             return 0;
         }
-
-        // Stand pat
-        let static_eval = self.evaluate(ply); // TODO : Shouldn't be done when in check
-        self.nodes += 1;
-        let mut best_value = static_eval;
-        if best_value >= beta {
-            return best_value;
+        if ply >= globals::MAX_SEARCH_PLY - 1 {
+            return self.evaluate(ply);
         }
-        alpha = alpha.max(best_value);
 
 
-        let tt_move = None;
-        let mut picker = MovePicker::new_quiescence(tt_move);
+        let alpha_orig = alpha;
+
+        // Probe TT
+        let mut tt_move = None;
+        if let Some(entry) = self.tt_probe() {
+            if let Some(score) = entry.cutoff_score(0, alpha, beta, ply) {
+                return score;
+            }
+            tt_move = Some(entry.best_move());
+        }
+
+        let in_check = self.state.is_in_check(self.state.board.side_to_move);
+        let static_eval; // TODO : Shouldn't be done when in check
+        let mut best_move = None;
+        let mut best_value;
+
+
+        if in_check {
+            static_eval = 0;
+            best_value = -MATE_SCORE + ply as i32; // mated unless an evasion exists
+        }
+        else{
+            // Stand pat
+            static_eval = self.evaluate(ply);
+            best_value = static_eval;
+            if best_value >= beta {
+                return best_value;
+            }
+            alpha = alpha.max(best_value);
+        }
+
+        let mut picker = if in_check {
+            MovePicker::new(tt_move, None, None)
+        } else {
+            MovePicker::new_quiescence(tt_move)
+        };
 
         while let Some(mv) = picker.next_move(self) {
+            if !in_check{
+                // Delta pruning
+                let cap_val = match mv.captured() {
+                    Some(piece) => evaluation::get_piece_score(piece),
+                    None => 0,
+                };
+                if static_eval + cap_val + 200 < alpha && !mv.is_promotion() {
+                    continue;
+                }
 
-            // Delta pruning
-            let cap_val = match mv.captured() {
-                Some(piece) => evaluation::get_piece_score(piece),
-                None => 0,
-            };
-            if static_eval + cap_val + 200 < alpha && !mv.is_promotion() {
-                continue;
-            }
-
-            // Static exchange evaluation
-            if !self.state.is_move_greater_equal(mv, 0) {
-                continue;
+                // Static exchange evaluation (SEE)
+                if !self.state.is_move_greater_equal(mv, 0) {
+                    continue;
+                }
             }
 
             if !self.make_move(mv, ply) {
-                continue;
+                continue; // Illegal move continue
             }
             let score = -self.quiescence(-beta, -alpha, ply + 1);
             self.undo_move(mv);
-
-            if score >= beta {
-                return score;
+            if self.is_time_up() {
+                return 0;
             }
-            best_value = best_value.max(score);
-            alpha = alpha.max(score);
+
+            if score > best_value {
+                best_value = score;
+                best_move = Some(mv);
+                if score > alpha {
+                    alpha = score;
+                    if score >= beta {
+                        break;
+                    }
+                }
+            }
+        }
+        if let Some(mv) = best_move {
+            self.tt_store(alpha_orig, beta, 0, ply, mv, best_value);
         }
         best_value
     }
 }
 
+// --- Internal helpers
+impl SearchWorker<'_> {
+    #[inline]
+    fn tt_store(
+        &mut self,
+        orig_alpha: i32,
+        beta: i32,
+        depth: u32,
+        ply: usize,
+        mv: Move,
+        score: i32,
+    ) {
+        let flag = if score >= beta {
+            EntryFlag::LowerBound
+        } else if score <= orig_alpha {
+            EntryFlag::UpperBound
+        } else {
+            EntryFlag::Exact
+        };
+
+        let hash = self.state.hash;
+        self.table.store(hash, depth, score, flag, mv, ply)
+    }
+
+    #[inline]
+    fn tt_probe(&self) -> Option<TTEntry> {
+        if let Some(entry) = self.table.probe(self.state.hash) {
+            return Some(entry);
+        }
+        None
+    }
+}
 
 #[derive(Copy, Clone)]
-pub struct NNUEDiff{
+pub struct NNUEDiff {
     pub removed: [(u8, Piece); 2],
     pub removed_len: usize,
     pub added: [(u8, Piece); 2],
@@ -354,10 +407,9 @@ pub struct NNUEDiff{
 }
 
 impl NNUEDiff {
-
     #[inline(always)]
     pub fn new() -> NNUEDiff {
-        NNUEDiff{
+        NNUEDiff {
             removed: [(0, Piece::new(Color::White, PieceKind::Pawn)); 2],
             removed_len: 0,
             added: [(0, Piece::new(Color::White, PieceKind::Pawn)); 2],
@@ -366,7 +418,7 @@ impl NNUEDiff {
     }
 
     #[inline(always)]
-    pub fn get_removed(&self) -> &[(u8, Piece)]{
+    pub fn get_removed(&self) -> &[(u8, Piece)] {
         &self.removed[..self.removed_len]
     }
 
@@ -376,38 +428,74 @@ impl NNUEDiff {
     }
 
     #[inline(always)]
-    pub fn push_removed(&mut self, sq : u8, piece : usize){
+    pub fn push_removed(&mut self, sq: u8, piece: usize) {
         self.removed[self.removed_len] = (sq, Self::piece_to_nnue_piece(piece));
         self.removed_len += 1;
     }
 
     #[inline(always)]
-    pub fn push_added(&mut self, sq : u8, piece : usize){
+    pub fn push_added(&mut self, sq: u8, piece: usize) {
         self.added[self.added_len] = (sq, Self::piece_to_nnue_piece(piece));
         self.added_len += 1;
     }
 
     #[inline(always)]
-    pub fn clear(&mut self){
+    pub fn clear(&mut self) {
         self.removed_len = 0;
         self.added_len = 0;
     }
 
     #[inline(always)]
-    pub fn piece_to_nnue_piece(piece : usize) -> Piece {
+    pub fn piece_to_nnue_piece(piece: usize) -> Piece {
         const MAP: [Piece; 12] = [
-            Piece { kind: PieceKind::Pawn, color: Color::White },
-            Piece { kind: PieceKind::Knight, color: Color::White },
-            Piece { kind: PieceKind::Bishop, color: Color::White },
-            Piece { kind: PieceKind::Rook, color: Color::White },
-            Piece { kind: PieceKind::Queen, color: Color::White },
-            Piece { kind: PieceKind::King, color: Color::White },
-            Piece { kind: PieceKind::Pawn, color: Color::Black },
-            Piece { kind: PieceKind::Knight, color: Color::Black },
-            Piece { kind: PieceKind::Bishop, color: Color::Black },
-            Piece { kind: PieceKind::Rook, color: Color::Black },
-            Piece { kind: PieceKind::Queen, color: Color::Black },
-            Piece { kind: PieceKind::King, color: Color::Black },
+            Piece {
+                kind: PieceKind::Pawn,
+                color: Color::White,
+            },
+            Piece {
+                kind: PieceKind::Knight,
+                color: Color::White,
+            },
+            Piece {
+                kind: PieceKind::Bishop,
+                color: Color::White,
+            },
+            Piece {
+                kind: PieceKind::Rook,
+                color: Color::White,
+            },
+            Piece {
+                kind: PieceKind::Queen,
+                color: Color::White,
+            },
+            Piece {
+                kind: PieceKind::King,
+                color: Color::White,
+            },
+            Piece {
+                kind: PieceKind::Pawn,
+                color: Color::Black,
+            },
+            Piece {
+                kind: PieceKind::Knight,
+                color: Color::Black,
+            },
+            Piece {
+                kind: PieceKind::Bishop,
+                color: Color::Black,
+            },
+            Piece {
+                kind: PieceKind::Rook,
+                color: Color::Black,
+            },
+            Piece {
+                kind: PieceKind::Queen,
+                color: Color::Black,
+            },
+            Piece {
+                kind: PieceKind::King,
+                color: Color::Black,
+            },
         ];
         MAP[piece]
     }

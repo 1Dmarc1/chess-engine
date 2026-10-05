@@ -34,6 +34,7 @@ pub struct TTEntry {
 
 impl TTEntry {
     /// Creates a new blank entry for the transposition table.
+    #[inline(always)]
     pub fn blank() -> Self {
         Self {
             key: AtomicU64::new(0),  // The key for this entry
@@ -42,6 +43,7 @@ impl TTEntry {
     }
 
     /// Creates a new TTEntry from a key and raw data.
+    #[inline(always)]
     fn from_raw(key: u64, data: u64) -> TTEntry {
         TTEntry {
             key: AtomicU64::new(key),
@@ -72,6 +74,7 @@ impl TTEntry {
     }
 
     /// Returns the key of this entry.
+    #[inline(always)]
     pub fn key(&self) -> u64 {
         let key = self.key.load(Relaxed);
         let data = self.data.load(Relaxed);
@@ -79,17 +82,20 @@ impl TTEntry {
     }
 
     /// Returns the stored depth.
+    #[inline(always)]
     pub fn depth(&self) -> u8 {
         (self.data.load(Relaxed) & 0xFF) as u8
     }
 
     /// Returns the stored score.
+    #[inline]
     pub fn score(&self, ply : usize) -> i16 {
         let loaded = ((self.data.load(Relaxed) >> 8) & 0xFFFF) as i16;
-        return score_from_tt(loaded as i32, ply) as i16
+        score_from_tt(loaded as i32, ply) as i16
     }
 
     /// Returns the stored flag.
+    #[inline(always)]
     pub fn flag(&self) -> EntryFlag {
         let raw = self.data.load(Relaxed);
         let flag_data = (raw >> 24) & 0x3;
@@ -102,17 +108,41 @@ impl TTEntry {
     }
 
     /// Returns the stored best move.
+    #[inline(always)]
     pub fn best_move(&self) -> Move {
         let move_data = self.data.load(Relaxed) >> 26 & 0xFFFF_FFFF;
         Move::from_raw(move_data as u32)
     }
+
+    /// Returns a score usable for a cutoff, if there is one.
+    #[inline]
+    pub fn cutoff_score(&self, depth: i32, alpha: i32, beta: i32, ply: usize) -> Option<i32> {
+        if (self.depth() as i32) < depth {
+            return None;
+        }
+        let score = self.score(ply) as i32;
+        match self.flag() {
+            EntryFlag::Exact => Some(score),
+            EntryFlag::LowerBound if score >= beta => Some(score),
+            EntryFlag::UpperBound if score <= alpha => Some(score),
+            _ => None,
+        }
+    }
 }
 
+/// How a stored score relates to the true value of the position
+/// (at the depth it was searched).
 #[derive(Clone, Copy, Eq, PartialEq)]
 #[repr(u8)]
 pub enum EntryFlag {
+    /// The score is the true value: the search finished inside the
+    /// (alpha, beta) window.
     Exact,
+    /// The true value is >= the score. The search failed high (beta cutoff),
+    /// so some moves were never examined and may be even better.
     LowerBound,
+    /// The true value is <= the score. The search failed low: no move
+    /// raised alpha, so the score is only a ceiling.
     UpperBound,
 }
 
