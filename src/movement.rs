@@ -10,7 +10,7 @@ use crate::board::game_state::GameState;
 use crate::movement::attacks::KING_ATTACKS;
 use crate::movement::bishop_move_gen::init_bishop_tables;
 use crate::movement::castle_move_gen::generate_castle_moves;
-use crate::movement::move_list::MoveList;
+pub use crate::movement::move_list::MoveList;
 use crate::movement::rook_move_gen::init_rook_tables;
 use crate::types::MoveType::Quiet;
 use crate::types::piece::PieceColor;

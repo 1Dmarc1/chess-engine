@@ -43,7 +43,7 @@ pub fn iterative_deepening(
 }
 
 fn search_root(worker: &mut SearchWorker, depth: i32, previous_best_move: Option<Move>) -> Option<(Move, i32)> {
-    let mut picker = MovePicker::new(worker, previous_best_move, None, None); // Initialize the move picker
+    let mut picker = MovePicker::new(previous_best_move, None, None); // Initialize the move picker
 
     let mut max_eval = -INFINITY; // The score of the best move found so far
     let mut best_move = None; // The best move found so far

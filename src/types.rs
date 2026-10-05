@@ -1,4 +1,8 @@
+use crate::board::bitboard::Bitboard;
+use crate::board::game_state::GameState;
+use crate::movement::{attacks, bishop_move_gen, rook_move_gen};
 use crate::types::MoveType::Quiet;
+use crate::types::piece::PieceColor;
 use crate::util;
 
 pub const CASTLE_BLACK_QUEEN: u8 = 0b0001;
@@ -21,24 +25,10 @@ pub mod piece {
     pub const B_ROOK: usize = 9;
     pub const B_QUEEN: usize = 10;
     pub const B_KING: usize = 11;
-    
-    pub const WHITE_PIECES : [usize; 6] = [
-        W_PAWN,
-        W_KNIGHT,
-        W_BISHOP,
-        W_ROOK,
-        W_QUEEN,
-        W_KING,
-    ];
-    
-    pub const BLACK_PIECES : [usize; 6] = [
-        B_PAWN,
-        B_KNIGHT,
-        B_BISHOP,
-        B_ROOK,
-        B_QUEEN,
-        B_KING,
-    ];
+
+    pub const WHITE_PIECES: [usize; 6] = [W_PAWN, W_KNIGHT, W_BISHOP, W_ROOK, W_QUEEN, W_KING];
+
+    pub const BLACK_PIECES: [usize; 6] = [B_PAWN, B_KNIGHT, B_BISHOP, B_ROOK, B_QUEEN, B_KING];
 
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     pub enum PieceColor {
@@ -197,6 +187,91 @@ impl Move {
                 }
             }
             _ => self.piece_type(),
+        }
+    }
+
+    /// Returns true if this move is pseudo legal.
+    #[inline]
+    pub fn is_pseudo_legal(&self, state: &GameState) -> bool {
+
+        let to = self.to();
+        let from = self.from();
+        let move_type = self.move_type();
+
+        let to_bb = Bitboard(1u64 << to);
+        let from_bb = Bitboard(1u64 << from);
+
+
+        if (state.friendly_pieces() & from_bb).is_empty() {
+            return false;
+        }
+
+        // Does the piece even exist
+        if !state.board.pieces[self.piece_type()].is_set(from) {
+            return false;
+        }
+
+        // We cant capture our own piece
+        if !(state.friendly_pieces() & to_bb).is_empty() {
+            return false;
+        }
+
+        let is_enemy_on_to = !(state.opponent_pieces() & to_bb).is_empty();
+        if is_enemy_on_to != self.captured().is_some() && !self.is_en_passant() {
+            return false;
+        }
+
+        match self.piece_type() {
+            piece::W_KNIGHT | piece::B_KNIGHT => {
+                !(attacks::KNIGHT_ATTACKS[from as usize] & to_bb).is_empty()
+            },
+            piece::W_KING | piece::B_KING => {
+                if move_type == MoveType::KingCastle || move_type == MoveType::QueenCastle {
+                    return false; // TODO: Implement Castle Checks
+                }
+                !(attacks::KING_ATTACKS[self.from() as usize] & to_bb).is_empty()
+            }
+            piece::W_BISHOP | piece::B_BISHOP => {
+                let attacks = bishop_move_gen::get_bishop_attacks(from, state.all_pieces());
+                !(attacks & to_bb).is_empty()
+            }
+            piece::W_ROOK | piece::B_ROOK => {
+                let attacks = rook_move_gen::get_rook_attacks(from, state.all_pieces());
+                !(attacks & to_bb).is_empty()
+            }
+            piece::W_QUEEN | piece::B_QUEEN => {
+                let attacks = bishop_move_gen::get_bishop_attacks(from, state.all_pieces())
+                    | rook_move_gen::get_rook_attacks(from, state.all_pieces());
+                !(attacks & to_bb).is_empty()
+            }
+            piece::W_PAWN | piece::B_PAWN => {
+                let us = state.board.side_to_move;
+                let direction = if us == PieceColor::White { 1 } else { -1 };
+                let diff = to as isize - from as isize;
+
+                // Single push
+                if diff == direction * 8 {
+                    return state.board.get_piece_at_square(to).is_none();
+                }
+
+                // Double push
+                if move_type == MoveType::DoublePawnPush {
+                    let intermediate_sq = (from as isize + direction * 8) as u8;
+                    return diff == direction * 16
+                        && state.board.get_piece_at_square(to).is_none()
+                        && state.board.get_piece_at_square(intermediate_sq).is_none();
+                }
+
+                // Diagonal captures & En Passant
+                if diff == direction * 7 || diff == direction * 9 {
+                    if move_type == MoveType::EnPassant {
+                        return state.en_passant == Some(to as usize);
+                    }
+                    return state.board.get_piece_at_square(to).is_some();
+                }
+
+                false            }
+            _ => unreachable!(),
         }
     }
 }

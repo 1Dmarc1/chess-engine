@@ -18,6 +18,21 @@ impl MoveList {
     pub fn as_mut_slice(&mut self) -> &mut [Move] {
         &mut self.moves[..self.len]
     }
+
+    /// Returns true if the target move exists in the moves list.
+    #[inline]
+    pub fn contains(&self, mv: Move) -> bool {
+        for i in 0..self.len {
+            if self.moves[i] == mv {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn clear(&mut self) {
+        self.len = 0;
+    }
 }
 
 impl Default for MoveList {

@@ -200,7 +200,7 @@ impl<'a> SearchWorker<'a> {
         let k2 = self.stack[ply].killers[1];
 
         // Initialize move picker
-        let mut picker = MovePicker::new(self, tt_move, k1, k2);
+        let mut picker = MovePicker::new(tt_move, k1, k2);
         let mut max_eval = -INFINITY;
         let mut best_move = None;
         let mut legal_moves_played = 0;
@@ -308,7 +308,7 @@ impl<'a> SearchWorker<'a> {
 
 
         let tt_move = None;
-        let mut picker = MovePicker::new_quiescence(self, tt_move);
+        let mut picker = MovePicker::new_quiescence(tt_move);
 
         while let Some(mv) = picker.next_move(self) {
 
