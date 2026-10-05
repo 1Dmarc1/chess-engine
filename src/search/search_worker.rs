@@ -322,7 +322,7 @@ impl<'a> SearchWorker<'a> {
             }
 
             // Static exchange evaluation
-            if !self.state.is_move_greater_equal(&mv, 0) {
+            if !self.state.is_move_greater_equal(mv, 0) {
                 continue;
             }
 

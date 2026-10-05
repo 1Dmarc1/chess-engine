@@ -141,7 +141,7 @@ impl MovePicker {
     #[inline(always)]
     fn score_captures(&mut self) {
         for i in 0..self.moves.len {
-            self.scores[i] = evaluation::mvv_lva(&self.moves.moves[i]);
+            self.scores[i] = evaluation::mvv_lva(self.moves.moves[i]);
         }
     }
 
