@@ -1,9 +1,9 @@
-use std::cmp::PartialEq;
 use crate::movement::generate_pseudo_legal_moves;
 use crate::movement::move_list::MoveList;
 use crate::search::evaluation;
 use crate::search::search_worker::SearchWorker;
 use crate::types::Move;
+use std::cmp::PartialEq;
 
 #[derive(Eq, PartialEq)]
 enum Stage {
@@ -26,11 +26,10 @@ pub struct MovePicker {
     moves: MoveList,
     scores: [i32; 256],
     index: usize,
-    captures_end: usize, // The first index which is not a capture move
+    captures_end: usize,       // The first index which is not a capture move
     bad_captures_start: usize, // The first index in the moves list which is a bad capture
     quiescence_only: bool,
 }
-
 
 impl MovePicker {
     pub fn new(tt_move: Option<Move>, killer1: Option<Move>, killer2: Option<Move>) -> Self {
@@ -69,119 +68,161 @@ impl MovePicker {
         loop {
             match self.stage {
                 Stage::TTMove => {
-                    self.stage = Stage::GenerateCaptures;
-                    if let Some(mv) = self.tt_move
-                        && mv.is_pseudo_legal(&worker.state)
-                    {
+                    if let Some(mv) = self.yield_tt_move(worker) {
                         return Some(mv);
                     }
                 }
-                Stage::GenerateCaptures => {
-                    self.index = 0;
-
-                    //Only generate captures
-                    generate_pseudo_legal_moves::<true, false>(&worker.state, &mut self.moves);
-                    self.score_captures(worker);
-                    self.captures_end = self.moves.len;
-                    self.stage = Stage::YieldGoodCaptures;
-                }
+                Stage::GenerateCaptures => self.generate_captures(worker),
                 Stage::YieldGoodCaptures => {
-                    if let Some((mv, score)) = self.pick_next_best() {
-                        if score < 0 {
-                            self.bad_captures_start = self.index - 1;
-                            if self.quiescence_only {
-                                self.stage = Stage::Done;
-                                continue;
-                            } else {
-                                self.stage = Stage::Killer1;
-                                continue;
-                            }
-                        }
-                        if Some(mv) == self.tt_move && mv.captured().is_some() {
-                            continue; // Skip the tt move if it was a capture
-                        }
+                    if let Some(mv) = self.yield_good_captures() {
                         return Some(mv);
                     }
-                    if self.quiescence_only {
-                        self.stage = Stage::Done;
-                    } else {
-                        self.stage = Stage::Killer1;
-                    }
-                    self.bad_captures_start = self.index;
                 }
                 Stage::Killer1 => {
-                        self.stage = Stage::Killer2;
-                        if let Some(mv) = self.killer1
-                            && Some(mv) != self.tt_move
-                            && mv.captured().is_none()
-                            && mv.is_pseudo_legal(&worker.state)
-                        {
-                            return Some(mv);
-                        }
+                    self.stage = Stage::Killer2;
+                    if let Some(mv) = self.yield_killer(self.killer1, worker) {
+                        return Some(mv);
                     }
-                    Stage::Killer2 => {
-                        self.stage = Stage::GenerateQuiets;
-                        if let Some(mv) = self.killer2
-                            && Some(mv) != self.tt_move
-                            && mv.captured().is_none()
-                            && mv.is_pseudo_legal(&worker.state)
-                        {
-                            return Some(mv);
-                        }
+                }
+                Stage::Killer2 => {
+                    self.stage = Stage::GenerateQuiets;
+                    if let Some(mv) = self.yield_killer(self.killer2, worker) {
+                        return Some(mv);
                     }
-                    Stage::GenerateQuiets => {
-                        self.index = self.moves.len;
-                        generate_pseudo_legal_moves::<false, true>(&worker.state, &mut self.moves); // Append the quiet moves to the list
-                        self.score_quiets(worker);
-                        self.stage = Stage::YieldQuiets;
+                }
+                Stage::GenerateQuiets => self.generate_quiets(worker),
+                Stage::YieldQuiets => {
+                    if let Some(mv) = self.yield_quiets() {
+                        return Some(mv);
                     }
-                    Stage::YieldQuiets => {
-                        if let Some((mv, _)) = self.pick_next_best() {
-                            if Some(mv) == self.tt_move && mv.captured().is_none() {
-                                continue;
-                            }
-                            if Some(mv) == self.killer1 || Some(mv) == self.killer2 {
-                                continue;
-                            }
-                            return Some(mv);
-                        }
-                        self.moves.len = self.captures_end; // Hide the quiet moves
-                        self.index = self.bad_captures_start;
-
-                        self.stage = Stage::YieldBadCaptures;
+                }
+                Stage::YieldBadCaptures => {
+                    if let Some(mv) = self.yield_bad_captures() {
+                        return Some(mv);
                     }
-                    Stage::YieldBadCaptures => {
-                        if let Some((mv, _)) = self.pick_next_best() {
-                            if Some(mv) == self.tt_move { continue; }
-                            return Some(mv);
-                        }
-                        self.stage = Stage::Done;
-                    }
-                    Stage::Done => {
-                        return None;
-                    }
+                }
+                Stage::Done => {
+                    return None;
                 }
             }
         }
+    }
 
-    #[inline(always)]
+    #[inline]
+    fn yield_tt_move(&mut self, search_worker: &SearchWorker) -> Option<Move> {
+        self.stage = Stage::GenerateCaptures;
+        if let Some(mv) = self.tt_move
+            && mv.is_pseudo_legal(&search_worker.state)
+        {
+            return Some(mv);
+        }
+        None
+    }
+
+    #[inline]
+    fn yield_killer(&mut self, killer: Option<Move>, worker: &SearchWorker) -> Option<Move> {
+        if let Some(mv) = killer {
+            if Some(mv) != self.tt_move
+                && mv.captured().is_none()
+                && mv.is_pseudo_legal(&worker.state)
+            {
+                return Some(mv);
+            }
+        }
+        None
+    }
+
+    #[inline]
+    fn generate_captures(&mut self, search_worker: &SearchWorker) {
+        self.index = 0;
+        generate_pseudo_legal_moves::<true, false>(&search_worker.state, &mut self.moves);
+        self.score_captures(search_worker);
+        self.captures_end = self.moves.len;
+        self.stage = Stage::YieldGoodCaptures;
+    }
+
+    #[inline]
+    fn yield_good_captures(&mut self) -> Option<Move> {
+        if let Some((mv, score)) = self.pick_next_best() {
+            if score < 0 {
+                self.bad_captures_start = self.index - 1;
+                self.stage = if self.quiescence_only {
+                    Stage::Done
+                } else {
+                    Stage::Killer1
+                };
+                return None;
+            }
+            if Some(mv) == self.tt_move && mv.captured().is_some() {
+                return None; // Skip already evaluated TT capture
+            }
+            return Some(mv);
+        }
+        self.bad_captures_start = self.index;
+        self.stage = if self.quiescence_only {
+            Stage::Done
+        } else {
+            Stage::Killer1
+        };
+        None
+    }
+
+    #[inline]
+    fn generate_quiets(&mut self, search_worker: &SearchWorker) {
+        self.index = self.moves.len;
+        generate_pseudo_legal_moves::<false, true>(&search_worker.state, &mut self.moves); // Append the quiet moves to the list
+        self.score_quiets(search_worker);
+        self.stage = Stage::YieldQuiets;
+    }
+
+    #[inline]
+    fn yield_quiets(&mut self) -> Option<Move> {
+        if let Some((mv, _)) = self.pick_next_best() {
+            if Some(mv) == self.tt_move || Some(mv) == self.killer1 || Some(mv) == self.killer2 {
+                return None;
+            }
+            return Some(mv);
+        }
+        // Setup for Bad Captures once quiets are exhausted
+        self.moves.len = self.captures_end;
+        self.index = self.bad_captures_start;
+        self.stage = Stage::YieldBadCaptures;
+        None
+    }
+
+    #[inline]
+    fn yield_bad_captures(&mut self) -> Option<Move> {
+        if let Some((mv, _)) = self.pick_next_best() {
+            if Some(mv) == self.tt_move {
+                return None;
+            }
+            return Some(mv);
+        }
+        self.stage = Stage::Done;
+        None
+    }
+
+    #[inline]
     fn score_captures(&mut self, worker: &SearchWorker) {
         for i in 0..self.moves.len {
             let mv = self.moves.moves[i];
 
             let mvv_lva = evaluation::mvv_lva(mv);
-            let is_good = if mvv_lva >= 0 {
+            let is_good = if Self::is_promising_capture(mv) {
                 true
             } else {
                 worker.state.is_move_greater_equal(mv, 0)
             };
-
-            const GOOD: i32 = 1_000_000;
-            self.scores[i] = if is_good { mvv_lva + GOOD } else { mvv_lva - GOOD };
+            const GOOD: i32 = 10_000_000;
+            self.scores[i] = if is_good {
+                mvv_lva + GOOD
+            } else {
+                mvv_lva - GOOD
+            };
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn score_quiets(&mut self, worker: &SearchWorker) {
         let side_idx = worker.state.board.side_to_move as usize;
 
@@ -191,10 +232,8 @@ impl MovePicker {
         }
     }
 
-    /// Finds and returns the move with the highest score in the remaining moves.
-    #[inline(always)]
+    #[inline]
     fn pick_next_best(&mut self) -> Option<(Move, i32)> {
-
         if self.index >= self.moves.len {
             return None;
         }
@@ -215,5 +254,12 @@ impl MovePicker {
         let mv = self.moves.moves[self.index];
         self.index += 1;
         Some((mv, best_score))
+    }
+
+    #[inline]
+    fn is_promising_capture(mv: Move) -> bool {
+        let victim_val = evaluation::get_piece_score(mv.captured().unwrap_or(0) as usize);
+        let attacker_val = evaluation::get_piece_score(mv.piece_type() as usize);
+        victim_val >= attacker_val
     }
 }
