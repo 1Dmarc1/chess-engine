@@ -62,8 +62,8 @@ impl GameState {
 
     pub fn is_repetition(&self) -> bool {
         let max_lookback = (self.halfmove_clock as usize).min(self.ply); // Go as far back as the halfmove_clock
-        for _i in (2..=max_lookback).step_by(2) { // Step by 2 to skip the opponent
-            if self.stack.get(self.ply - 1).hash == self.hash {
+        for i in (2..=max_lookback).step_by(2) { // Step by 2 to skip the opponent
+            if self.stack.get(self.ply - i).hash == self.hash {
                 return true;
             }
         }
