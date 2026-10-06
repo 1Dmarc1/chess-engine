@@ -3,7 +3,7 @@ use crate::types::MoveType::Quiet;
 
 #[derive(Copy, Clone)]
 pub struct MoveList {
-    pub moves: [Move; 218],
+    pub moves: [Move; 256],
     pub len: usize,
 }
 
@@ -38,7 +38,7 @@ impl MoveList {
 impl Default for MoveList {
     fn default() -> Self {
         Self {
-            moves: [Move::new(0, 0, 0, None, Quiet); 218],
+            moves: [Move::new(0, 0, 0, None, Quiet); 256],
             len: 0,
         }
     }

@@ -2,7 +2,6 @@ use crate::board::game_state::GameState;
 use crate::board::transposition_table::{EntryFlag, TTEntry, TranspositionTable};
 use crate::globals;
 use crate::globals::{INFINITY, MATE_SCORE};
-use crate::search::evaluation;
 use crate::search::lmr::get_lmr;
 use crate::search::move_picker::MovePicker;
 use crate::types::piece::PieceColor;
@@ -323,6 +322,7 @@ impl<'a> SearchWorker<'a> {
 
         while let Some(mv) = picker.next_move(self) {
             if !in_check {
+                // Static exchange evaluation
                 const SEE_MARGIN: i32 = 200;
                 let threshold = (alpha - static_eval - SEE_MARGIN).max(0);
                 if !mv.is_promotion() && !self.state.is_move_greater_equal(mv, threshold) {
