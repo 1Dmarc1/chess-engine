@@ -1,13 +1,11 @@
 use crate::board::game_state::GameState;
-use crate::board::transposition_table::{EntryFlag, TranspositionTable};
-use crate::globals::{INFINITY, NNUE_NETWORK};
-use crate::search::move_picker::MovePicker;
-use crate::search::search_worker::SearchWorker;
+use crate::board::transposition_table::TranspositionTable;
+use crate::globals::NNUE_NETWORK;
 use crate::types::Move;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
-
+use crate::search::search_worker::core::SearchWorker;
 
 /// Root search using Iterative Deepening
 pub fn iterative_deepening(
@@ -29,7 +27,7 @@ pub fn iterative_deepening(
 
     // Iteratively search each depth
     for depth in start_depth..=max_depth {
-        if let Some((best_move, eval)) = search_root(&mut worker, depth, best_move_overall) {
+        if let Some((best_move, eval)) = worker.search_root(depth, best_move_overall) {
 
             best_move_overall = Some(best_move);
             if thread_id == 0 {
@@ -42,54 +40,7 @@ pub fn iterative_deepening(
     best_move_overall
 }
 
-fn search_root(worker: &mut SearchWorker, depth: i32, previous_best_move: Option<Move>) -> Option<(Move, i32)> {
-    let mut picker = MovePicker::new(previous_best_move, None, None); // Initialize the move picker
 
-    let mut max_eval = -INFINITY; // The score of the best move found so far
-    let mut best_move = None; // The best move found so far
-    let mut alpha = -INFINITY;
-    let beta = INFINITY;
-
-
-    while let Some(mv) = picker.next_move(worker) {
-        if !worker.make_move(mv, 0) {
-            continue;
-        }
-
-        if best_move.is_none() {
-            best_move = Some(mv);
-        }
-
-        let eval = -worker.negamax( depth - 1, 1, -beta, -alpha);
-        worker.undo_move(mv);
-
-        if worker.is_time_up() {
-            if previous_best_move.is_none() {
-                break;
-            }
-            return None;
-        }
-
-        if eval > max_eval {
-            max_eval = eval;
-            best_move = Some(mv);
-            alpha = eval;
-        }
-    }
-
-    if let Some(mv) = best_move {
-        worker.table.store( // Store in TT
-            worker.state.hash,
-            depth as u32,
-            max_eval,
-            EntryFlag::Exact,
-            mv, 0
-        );
-        Some((mv, max_eval))
-    } else {
-        None
-    }
-}
 
 fn print_uci_info(
     start_time: &Instant,

@@ -1,5 +1,5 @@
 pub mod evaluation;
-pub mod min_max;
+pub mod root;
 mod move_picker;
 pub mod search_worker;
 mod lmr;

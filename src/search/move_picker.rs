@@ -1,7 +1,7 @@
 use crate::movement::generate_pseudo_legal_moves;
 use crate::movement::move_list::MoveList;
 use crate::search::evaluation;
-use crate::search::search_worker::SearchWorker;
+use crate::search::search_worker::core::SearchWorker;
 use crate::types::Move;
 use std::cmp::PartialEq;
 

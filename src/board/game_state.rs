@@ -4,7 +4,7 @@ use crate::board::fen_parser::{ParseError, parse_fen};
 use crate::board::history::HistoryStack;
 use crate::board::transposition_table::Zobrist;
 use crate::search::evaluation;
-use crate::search::search_worker::NNUEDiff;
+use crate::search::search_worker::nnue_diff::NNUEDiff;
 use crate::types::piece::PieceColor;
 use crate::types::{CASTLING_MASKS, Move, MoveType, piece};
 

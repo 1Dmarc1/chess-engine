@@ -1,6 +1,6 @@
 use crate::board::game_state::GameState;
 use crate::board::transposition_table::TranspositionTable;
-use crate::search::min_max::iterative_deepening;
+use crate::search::root::iterative_deepening;
 use crate::types::Move;
 use crate::{globals, movement};
 use nnue_rs::Network;
