@@ -45,25 +45,6 @@ impl Bitboard {
     pub fn is_empty(&self) -> bool {
         self.0 == 0
     }
-
-    pub fn print(&self) {
-        println!("  +-------------------+");
-        // Loop from rank 7 down to 0 (Rank 8 down to Rank 1)
-        for rank in (0..8).rev() {
-            print!("{} | ", rank + 1);
-            for file in 0..8 {
-                let square = util::rank_file_to_square(rank, file);
-                if self.is_set(square) {
-                    print!("1 ");
-                } else {
-                    print!(". ");
-                }
-            }
-            println!("|");
-        }
-        println!("  +-------------------+");
-        println!("    a b c d e f g h\n");
-    }
 }
 
 impl BitOr for Bitboard {

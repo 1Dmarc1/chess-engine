@@ -1,7 +1,7 @@
 use crate::board::bitboard::Bitboard;
 use crate::board::board_state::BoardState;
 use crate::board::fen_parser::{ParseError, parse_fen};
-use crate::board::history::HistoryStack;
+use crate::board::history_stack::HistoryStack;
 use crate::board::transposition_table::Zobrist;
 use crate::search::evaluation;
 use crate::search::search_worker::nnue_diff::NNUEDiff;

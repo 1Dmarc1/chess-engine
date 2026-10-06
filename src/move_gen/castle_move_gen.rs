@@ -1,6 +1,6 @@
 use crate::board::bitboard::Bitboard;
 use crate::board::game_state::GameState;
-use crate::movement::{Move, MoveList};
+use crate::move_gen::{Move, MoveList};
 use crate::types::piece::PieceColor;
 use crate::types::{CASTLE_BLACK_KING, CASTLE_BLACK_QUEEN, CASTLE_WHITE_KING, CASTLE_WHITE_QUEEN};
 

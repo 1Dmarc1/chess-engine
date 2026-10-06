@@ -1,5 +1,5 @@
 use crate::board::bitboard::Bitboard;
-use crate::movement::attacks::generate_dynamic_diagonal_attacks;
+use crate::move_gen::attacks::generate_dynamic_diagonal_attacks;
 use std::arch::x86_64::_pext_u64;
 
 /// Precomputed lookup table mapping `(square, pext_index)` to bishop attack bitboards.

@@ -1,12 +1,12 @@
 use crate::board::game_state::GameState;
 use crate::engine::Engine;
 use crate::globals;
-use crate::movement::{generate_pseudo_legal_moves};
+use crate::move_gen::{generate_pseudo_legal_moves};
 use crate::types::piece::PieceColor;
 use crate::types::{Move, MoveType};
 use std::str::SplitWhitespace;
 use std::time::Duration;
-use crate::movement::move_list::MoveList;
+use crate::move_gen::move_list::MoveList;
 
 /// Handles incoming uci commands. Returns true if the engine should quit.
 pub fn handle_uci_command(line: &str, engine: &mut Engine) -> bool {

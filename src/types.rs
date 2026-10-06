@@ -1,6 +1,6 @@
 use crate::board::bitboard::Bitboard;
 use crate::board::game_state::GameState;
-use crate::movement::{attacks, bishop_move_gen, rook_move_gen};
+use crate::move_gen::{attacks, bishop_move_gen, rook_move_gen};
 use crate::types::MoveType::Quiet;
 use crate::types::piece::PieceColor;
 use crate::util;

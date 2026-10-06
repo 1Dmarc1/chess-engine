@@ -7,11 +7,11 @@ pub mod move_list;
 
 use crate::board::bitboard::Bitboard;
 use crate::board::game_state::GameState;
-use crate::movement::attacks::KING_ATTACKS;
-use crate::movement::bishop_move_gen::init_bishop_tables;
-use crate::movement::castle_move_gen::generate_castle_moves;
-pub use crate::movement::move_list::MoveList;
-use crate::movement::rook_move_gen::init_rook_tables;
+use crate::move_gen::attacks::KING_ATTACKS;
+use crate::move_gen::bishop_move_gen::init_bishop_tables;
+use crate::move_gen::castle_move_gen::generate_castle_moves;
+pub use crate::move_gen::move_list::MoveList;
+use crate::move_gen::rook_move_gen::init_rook_tables;
 use crate::types::MoveType::Quiet;
 use crate::types::piece::PieceColor;
 use crate::types::{Move, MoveType, piece};

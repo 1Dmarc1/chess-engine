@@ -2,7 +2,7 @@ use crate::board::game_state::GameState;
 use crate::board::transposition_table::TranspositionTable;
 use crate::search::root::iterative_deepening;
 use crate::types::Move;
-use crate::{globals, movement};
+use crate::{globals, move_gen};
 use nnue_rs::Network;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,7 +36,7 @@ impl Engine {
         if !Self::initialize_network() {
             panic!("Failed to initialize NNUE_NETWORK");
         }
-        movement::setup(); // Ensure the movement tables are filled.
+        move_gen::setup(); // Ensure the move_gen tables are filled.
 
         Engine {
             options: EngineOptions::default(),

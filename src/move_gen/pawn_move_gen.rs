@@ -1,6 +1,6 @@
 use crate::board::bitboard::Bitboard;
 use crate::board::game_state::GameState;
-use crate::movement::{MoveList, MoveType, attacks};
+use crate::move_gen::{MoveList, MoveType, attacks};
 use crate::types::{Move, piece};
 use crate::types::piece::PieceColor;
 

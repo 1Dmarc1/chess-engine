@@ -201,13 +201,16 @@ impl<'a> SearchWorker<'a> {
         &mut self,
         depth: i32,
         previous_best_move: Option<Move>,
+        mut alpha: i32,
+        beta: i32
     ) -> Option<(Move, i32)> {
-        let mut picker = MovePicker::new(previous_best_move, None, None); // Initialize the move picker
 
-        let mut max_eval = -INFINITY; // The score of the best move found so far
-        let mut best_move = None; // The best move found so far
-        let mut alpha = -INFINITY;
-        let beta = INFINITY;
+        let mut picker = MovePicker::new(previous_best_move, None, None);
+        let mut max_eval = -INFINITY;
+        let mut best_move = None;
+
+        // 1. Capture the original alpha to determine correct TT flags later
+        let orig_alpha = alpha;
 
         while let Some(mv) = picker.next_move(self) {
             if !self.make_move(mv, 0) {
@@ -231,19 +234,33 @@ impl<'a> SearchWorker<'a> {
             if eval > max_eval {
                 max_eval = eval;
                 best_move = Some(mv);
-                alpha = eval;
+            }
+
+            alpha = alpha.max(eval);
+
+            // 2. ROOT BETA CUTOFF: Stop immediately on a Fail-High so we can re-search!
+            if alpha >= beta {
+                break;
             }
         }
 
         if let Some(mv) = best_move {
+            // 3. CORRECT TT FLAGS: Never store Exact bounds on a fail-high or fail-low.
+            let flag = if max_eval >= beta {
+                EntryFlag::LowerBound // We failed high
+            } else if max_eval <= orig_alpha {
+                EntryFlag::UpperBound // We failed low
+            } else {
+                EntryFlag::Exact      // We stayed inside the window
+            };
+
             self.table.store(
-                // Store in TT
                 self.state.hash,
                 depth as u32,
                 max_eval,
-                EntryFlag::Exact,
+                flag,
                 mv,
-                0,
+                0
             );
             Some((mv, max_eval))
         } else {

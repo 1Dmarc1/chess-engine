@@ -2,8 +2,8 @@ use crate::board::bitboard::Bitboard;
 use crate::types::piece;
 use crate::types::piece::PieceColor;
 use nnue_rs::{Board, Color, Piece, PieceKind};
-use crate::movement::{attacks, bishop_move_gen, rook_move_gen};
-use crate::movement::attacks::KING_ATTACKS;
+use crate::move_gen::{attacks, bishop_move_gen, rook_move_gen};
+use crate::move_gen::attacks::KING_ATTACKS;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BoardState {
