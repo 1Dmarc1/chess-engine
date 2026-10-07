@@ -2,8 +2,8 @@ use crate::board::game_state::GameState;
 use crate::globals::MIN_MATE_SCORE;
 use crate::types::Move;
 use crate::types::piece::PieceColor;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::{AtomicU64, AtomicU8};
 
 struct Xorshift64 {
     state: u64,

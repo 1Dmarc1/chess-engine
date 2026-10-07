@@ -1,11 +1,11 @@
 use crate::board::game_state::GameState;
 use crate::board::transposition_table::TranspositionTable;
-use crate::search::root::iterative_deepening;
+use crate::search::search_thread::SearchThread;
 use crate::types::Move;
 use crate::{globals, move_gen};
 use nnue_rs::Network;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -29,6 +29,7 @@ pub struct Engine {
     table: Arc<TranspositionTable>,
     stop_search: Arc<AtomicBool>,
     is_searching: Arc<AtomicBool>,
+    contexts: Vec<Arc<Mutex<SearchThread>>>,
 }
 
 impl Engine {
@@ -44,6 +45,7 @@ impl Engine {
             table: Arc::new(TranspositionTable::new(64)),
             stop_search: Arc::new(AtomicBool::new(false)),
             is_searching: Arc::new(AtomicBool::new(false)),
+            contexts: Vec::new(),
         }
     }
 
@@ -60,6 +62,11 @@ impl Engine {
         self.table = Arc::new(TranspositionTable::new(self.options.hash_table_size_mb));
         self.stop_search = Arc::new(AtomicBool::new(false));
         self.is_searching = Arc::new(AtomicBool::new(false));
+        self.contexts.clear();
+    }
+
+    pub fn stop_search(&mut self) {
+        self.stop_search.store(true, Ordering::Relaxed);
     }
 
     pub fn start_search(&mut self, allocated_time: Option<Duration>, max_depth: i32) {
@@ -68,13 +75,21 @@ impl Engine {
             return;
         }
 
+        // Setup thread contexts
+        let thread_count = self.options.threads;
+        while self.contexts.len() < thread_count as usize {
+            let id = self.contexts.len() as u8;
+            self.contexts.push(Arc::new(Mutex::new(SearchThread::new(id, self.table.clone(), self.stop_search.clone()))));
+        }
+        self.contexts.truncate(thread_count as usize);
+        let contexts = self.contexts.clone();
+
         self.table.inc_generation();
 
         self.stop_search.store(false, Ordering::Relaxed); // Reset the stop flag
         self.is_searching.store(true, Ordering::Relaxed); // Set is searching to true
 
         let stop_for_timer = Arc::clone(&self.stop_search);
-        let stop_for_search = Arc::clone(&self.stop_search);
         let searching_status = Arc::clone(&self.is_searching);
 
         // Spawn a timer thread
@@ -86,7 +101,6 @@ impl Engine {
         }
 
         // Create copies for the thread to use
-        let table_shared = Arc::clone(&self.table); // Get access to the shared table
         let state_clone = self.state.clone(); // Copy the current game state
         let thread_count = self.options.threads;
 
@@ -95,9 +109,8 @@ impl Engine {
             let best_move = Self::run_multithreaded_search(
                 state_clone,
                 max_depth,
-                table_shared,
-                stop_for_search,
                 thread_count,
+                contexts
             );
 
             if let Some(mv) = best_move {
@@ -110,32 +123,21 @@ impl Engine {
         });
     }
 
-    pub fn stop_search(&mut self) {
-        self.stop_search.store(true, Ordering::Relaxed);
-    }
 
     pub fn run_multithreaded_search(
         state: GameState,
         max_depth: i32,
-        table: Arc<TranspositionTable>,
-        stop_search: Arc<AtomicBool>,
         thread_count: u8,
+        contexts : Vec<Arc<Mutex<SearchThread>>>,
     ) -> Option<Move> {
         let mut handles = Vec::new();
 
         for thread_id in 0..thread_count {
-            let mut worker_state = state.clone();
-            let shared_table = Arc::clone(&table);
-            let shared_stop = Arc::clone(&stop_search);
+            let ctx = Arc::clone(&contexts[thread_id as usize]);
+            let worker_state = state.clone();
 
             let handle = thread::spawn(move || {
-                iterative_deepening(
-                    &mut worker_state,
-                    shared_table,
-                    max_depth,
-                    shared_stop,
-                    thread_id,
-                )
+                ctx.lock().unwrap().run(worker_state.clone(), max_depth)
             });
 
             handles.push(handle);

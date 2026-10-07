@@ -1,6 +1,7 @@
 pub mod evaluation;
-pub mod root;
 mod move_picker;
 pub mod search_worker;
 mod lmr;
-mod history_table;
+pub mod history_table;
+mod search_params;
+pub mod search_thread;
