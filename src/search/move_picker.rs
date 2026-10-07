@@ -210,7 +210,7 @@ impl MovePicker {
         for i in 0..self.moves.len {
             let mv = self.moves.moves[i];
 
-            let mvv_lva = evaluation::mvv_lva(mv);
+            let score = worker.history.score_capture(mv);
             let is_good = if Self::is_promising_capture(mv) {
                 true
             } else {
@@ -218,9 +218,9 @@ impl MovePicker {
             };
             const GOOD: i32 = 10_000_000;
             self.scores[i] = if is_good {
-                mvv_lva + GOOD
+                score + GOOD
             } else {
-                mvv_lva - GOOD
+                score - GOOD
             };
         }
     }

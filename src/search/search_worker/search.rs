@@ -58,7 +58,9 @@ impl<'a> SearchWorker<'a> {
         let mut best_move = None;
         let mut legal_moves_played = 0;
         let mut quiet_moves_count = 0;
+
         let mut failed_quiet_moves: MoveList = MoveList::default();
+        let mut failed_capture_moves: MoveList = MoveList::default();
 
         let static_eval = self.evaluate(ply);
         self.stack[ply].eval = static_eval;
@@ -120,7 +122,7 @@ impl<'a> SearchWorker<'a> {
             if alpha >= beta {
                 if is_quiet {
                     self.update_killers(ply, mv);
-                    self.history.update_history(
+                    self.history.update_quiet_move_history(
                         depth,
                         ply,
                         mv,
@@ -129,10 +131,18 @@ impl<'a> SearchWorker<'a> {
                         failed_quiet_moves.as_mut_slice()
                     );
                 }
+                else if mv.captured().is_some() {
+                    self.history.update_capture_move_history(mv, depth, failed_quiet_moves.as_mut_slice());
+                }
                 break;
             }
-            else if is_quiet{
-                failed_quiet_moves.push(mv);
+            else {
+                if is_quiet{
+                    failed_quiet_moves.push(mv);
+                }
+                else{
+                    failed_capture_moves.push(mv);
+                }
             }
         }
 

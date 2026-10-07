@@ -1,4 +1,5 @@
 use std::alloc::{alloc_zeroed, Layout};
+use crate::search::evaluation;
 use crate::search::search_worker::core::StackEntry;
 use crate::types::Move;
 
@@ -12,6 +13,8 @@ pub struct HistoryTable {
     pub cont_hist_1ply: Box<ContinuationTable>,
     /// Response to our own last move (N -2)
     pub cont_hist_2ply: Box<ContinuationTable>,
+    /// Store capture scores: (attacker_piece)(to_square)(victim_piece)
+    pub captures : [[[i16; 12]; 64]; 12],
 }
 
 impl HistoryTable {
@@ -29,10 +32,12 @@ impl HistoryTable {
             main: [[[0; 64]; 64]; 2],
             cont_hist_1ply,
             cont_hist_2ply,
+            captures: [[[0; 12]; 64]; 12],
         }
     }
 
     /// Returns a score for a quiet move depending on the scores stored in the history table.
+    #[inline]
     pub fn score_quiet_move(&self, mv: Move, side: usize, ply : usize, stack: &[StackEntry]) -> i32{
         let from = mv.from() as usize;
         let to = mv.to() as usize;
@@ -62,7 +67,36 @@ impl HistoryTable {
         score
     }
 
-    pub(crate) fn update_history(&mut self, depth : i32, ply : usize, cutoff_mv : Move, color_idx: usize, stack: &[StackEntry], failed_quiet_moves: &[Move]) {
+    /// Returns a score for a capture move depending on the scores in the history table.
+    #[inline(always)]
+    pub fn score_capture(&self, mv : Move) -> i32{
+        if mv.captured().is_none(){
+            return 0;
+        }
+
+        let mvv_lva_score = evaluation::mvv_lva(mv);
+        self.captures[mv.landed_piece()][mv.to() as usize][mv.captured().unwrap()] as i32 + mvv_lva_score
+    }
+
+    pub(crate) fn update_capture_move_history(&mut self, mv : Move, depth : i32, failed_captures : &[Move]) {
+        let bonus = ((depth * depth) as i16).min(400);
+
+        let attacker = mv.landed_piece();
+        let to = mv.to() as usize;
+        Self::update_entry(&mut self.captures[attacker][to][mv.captured().unwrap()], bonus);
+
+        // Penalize capture moves that were searched first and didn't cause a beta cutoff
+        for &failed_mv in failed_captures {
+            if let Some(failed_victim) = failed_mv.captured() {
+                Self::update_entry(
+                    &mut self.captures[failed_mv.landed_piece()][failed_mv.to() as usize][failed_victim],
+                    -bonus,
+                );
+            }
+        }
+    }
+
+    pub(crate) fn update_quiet_move_history(&mut self, depth : i32, ply : usize, cutoff_mv : Move, color_idx: usize, stack: &[StackEntry], failed_quiet_moves: &[Move]) {
         let bonus = ((depth * depth) as i16).min(400);
 
         let from = cutoff_mv.from() as usize;
@@ -81,7 +115,7 @@ impl HistoryTable {
 
         // Update 1-ply history
         if ply >= 1{
-            if let Some(p1_mv) = stack[ply].current_move {
+            if let Some(p1_mv) = stack[ply - 1].current_move {
                 let p1_piece = p1_mv.landed_piece();
                 let p1_to = p1_mv.to() as usize;
 
@@ -99,7 +133,7 @@ impl HistoryTable {
 
         // Update 2-ply history
         if ply >= 2 {
-            if let Some(p2_mv) = stack[ply - 1].current_move {
+            if let Some(p2_mv) = stack[ply - 2].current_move {
                 let p2_piece = p2_mv.landed_piece();
                 let p2_to = p2_mv.to() as usize;
 
