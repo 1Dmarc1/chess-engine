@@ -4,6 +4,7 @@ use nnue_rs::{Accumulator, Board, Network};
 use crate::board::game_state::GameState;
 use crate::board::transposition_table::TranspositionTable;
 use crate::globals;
+use crate::search::history_table::HistoryTable;
 use crate::search::search_worker::nnue_diff::NNUEDiff;
 use crate::types::Move;
 
@@ -14,20 +15,21 @@ pub struct StackEntry {
     pub(crate) eval: i32,
     pub(crate) diff : Option<NNUEDiff>,
     pub(crate) acc_clean : bool,
+    pub current_move : Option<Move>,
 }
 
 pub struct SearchWorker<'a> {
-    pub state: GameState,
-    pub table: Arc<TranspositionTable>,
-    pub network: &'a Network,
+    pub(crate) state: GameState,
+    pub(crate) table: Arc<TranspositionTable>,
+    pub(crate) network: &'a Network,
 
-    pub should_stop: Arc<AtomicBool>,
+    should_stop: Arc<AtomicBool>,
 
-    pub stack: [StackEntry; globals::MAX_SEARCH_PLY],
-    pub accumulators: [Accumulator; globals::MAX_SEARCH_PLY], // On accumulator for each search depth
-    pub accumulator_map: [usize; globals::MAX_SEARCH_PLY], // Defines for which ply which accumulator should be accessed
-    pub history: [[[i32; 64]; 64]; 2],                     // [Color][FromSquare][ToSquare]
-    pub nodes: u64,
+    pub(crate) stack: [StackEntry; globals::MAX_SEARCH_PLY],
+    accumulators: [Accumulator; globals::MAX_SEARCH_PLY], // On accumulator for each search depth
+    accumulator_map: [usize; globals::MAX_SEARCH_PLY], // Defines for which ply which accumulator should be accessed
+    pub history : HistoryTable,
+    pub(crate) nodes: u64,
 }
 
 impl<'a> SearchWorker<'a> {
@@ -51,7 +53,7 @@ impl<'a> SearchWorker<'a> {
             stack,
             accumulators,
             accumulator_map: std::array::from_fn(|i| i),
-            history: [[[0; 64]; 64]; 2],
+            history: HistoryTable::new(),
             nodes: 0,
         }
     }
@@ -63,6 +65,7 @@ impl<'a> SearchWorker<'a> {
             return false;
         }
 
+        self.stack[ply + 1].current_move = Some(mv);
         self.stack[ply + 1].diff = Some(res.1);
         self.stack[ply + 1].acc_clean = false;
         self.accumulator_map[ply + 1] = ply + 1; // Ensure that after a potential null move the correct accumulator is used.
@@ -78,6 +81,7 @@ impl<'a> SearchWorker<'a> {
     pub fn make_null_move(&mut self, ply: usize) {
         self.state.make_null_move(&self.table.zobrist);
         self.accumulator_map[ply + 1] = self.accumulator_map[ply];
+        self.stack[ply + 1].current_move = None;
     }
 
     #[inline(always)]

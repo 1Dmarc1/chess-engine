@@ -29,10 +29,11 @@ pub struct MovePicker {
     captures_end: usize,       // The first index which is not a capture move
     bad_captures_start: usize, // The first index in the moves list which is a bad capture
     quiescence_only: bool,
+    ply : usize,
 }
 
 impl MovePicker {
-    pub fn new(tt_move: Option<Move>, killer1: Option<Move>, killer2: Option<Move>) -> Self {
+    pub fn new(tt_move: Option<Move>, killer1: Option<Move>, killer2: Option<Move>, ply : usize) -> Self {
         Self {
             stage: Stage::TTMove,
             tt_move,
@@ -44,6 +45,7 @@ impl MovePicker {
             captures_end: 0,
             bad_captures_start: 0,
             quiescence_only: false,
+            ply
         }
     }
 
@@ -60,6 +62,7 @@ impl MovePicker {
             captures_end: 0,
             bad_captures_start: 0,
             quiescence_only: true,
+            ply : 0,
         }
     }
 
@@ -227,8 +230,8 @@ impl MovePicker {
         let side_idx = worker.state.board.side_to_move as usize;
 
         for i in self.index..self.moves.len {
-            let mv = &self.moves.moves[i];
-            self.scores[i] = worker.history[side_idx][mv.from() as usize][mv.to() as usize];
+            let mv = self.moves.moves[i];
+            self.scores[i] = worker.history.score_quiet_move(mv, side_idx, self.ply, &worker.stack);
         }
     }
 

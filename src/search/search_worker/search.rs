@@ -1,6 +1,7 @@
 use crate::board::transposition_table::EntryFlag;
 use crate::globals;
 use crate::globals::{INFINITY, MATE_SCORE};
+use crate::move_gen::MoveList;
 use crate::search::move_picker::MovePicker;
 use crate::search::search_worker::core::SearchWorker;
 use crate::types::Move;
@@ -51,11 +52,13 @@ impl<'a> SearchWorker<'a> {
             tt_move,
             self.stack[ply].killers[0],
             self.stack[ply].killers[1],
+            ply
         );
         let mut max_eval = -INFINITY;
         let mut best_move = None;
         let mut legal_moves_played = 0;
         let mut quiet_moves_count = 0;
+        let mut failed_quiet_moves: MoveList = MoveList::default();
 
         let static_eval = self.evaluate(ply);
         self.stack[ply].eval = static_eval;
@@ -117,14 +120,19 @@ impl<'a> SearchWorker<'a> {
             if alpha >= beta {
                 if is_quiet {
                     self.update_killers(ply, mv);
-                    self.update_history(
-                        self.state.board.side_to_move as usize,
-                        mv.from() as usize,
-                        mv.to() as usize,
+                    self.history.update_history(
                         depth,
+                        ply,
+                        mv,
+                        self.state.board.side_to_move as usize,
+                        &self.stack,
+                        failed_quiet_moves.as_mut_slice()
                     );
                 }
                 break;
+            }
+            else if is_quiet{
+                failed_quiet_moves.push(mv);
             }
         }
 
@@ -180,7 +188,7 @@ impl<'a> SearchWorker<'a> {
         }
 
         let mut picker = if in_check {
-            MovePicker::new(tt_move, None, None) // In check all possible moves are evaluated
+            MovePicker::new(tt_move, None, None, ply) // In check all possible moves are evaluated
         } else {
             MovePicker::new_quiescence(tt_move)
         };
@@ -229,11 +237,11 @@ impl<'a> SearchWorker<'a> {
         beta: i32
     ) -> Option<(Move, i32)> {
 
-        let mut picker = MovePicker::new(previous_best_move, None, None);
+        let mut picker = MovePicker::new(previous_best_move, None, None, 0);
         let mut max_eval = -INFINITY;
         let mut best_move = None;
 
-        // 1. Capture the original alpha to determine correct TT flags later
+        // Capture the original alpha to determine correct TT flags later
         let orig_alpha = alpha;
 
         while let Some(mv) = picker.next_move(self) {
@@ -262,14 +270,13 @@ impl<'a> SearchWorker<'a> {
 
             alpha = alpha.max(eval);
 
-            // 2. ROOT BETA CUTOFF: Stop immediately on a Fail-High so we can re-search!
+            // Beta cutoff
             if alpha >= beta {
                 break;
             }
         }
 
         if let Some(mv) = best_move {
-            // 3. CORRECT TT FLAGS: Never store Exact bounds on a fail-high or fail-low.
             let flag = if max_eval >= beta {
                 EntryFlag::LowerBound // We failed high
             } else if max_eval <= orig_alpha {
