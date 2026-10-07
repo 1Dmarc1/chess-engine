@@ -1,7 +1,10 @@
 use nnue_rs::{Color, Piece, PieceKind};
+use crate::board::board_state::BoardState;
 
 #[derive(Copy, Clone)]
 pub struct NNUEDiff {
+    pub start_state: BoardState,
+    pub target_state : BoardState,
     pub removed: [(u8, Piece); 2],
     pub removed_len: usize,
     pub added: [(u8, Piece); 2],
@@ -10,8 +13,10 @@ pub struct NNUEDiff {
 
 impl NNUEDiff {
     #[inline(always)]
-    pub fn new() -> NNUEDiff {
+    pub fn new(state : BoardState) -> NNUEDiff {
         NNUEDiff {
+            start_state: state,
+            target_state: state,
             removed: [(0, Piece::new(Color::White, PieceKind::Pawn)); 2],
             removed_len: 0,
             added: [(0, Piece::new(Color::White, PieceKind::Pawn)); 2],
@@ -47,7 +52,7 @@ impl NNUEDiff {
         self.added_len = 0;
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn piece_to_nnue_piece(piece: usize) -> Piece {
         const MAP: [Piece; 12] = [
             Piece {

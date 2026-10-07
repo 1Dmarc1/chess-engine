@@ -107,7 +107,7 @@ impl GameState {
     }
 
     fn make_move(&mut self, mv: &Move, zobrist: &Zobrist) -> NNUEDiff {
-        let mut diff = NNUEDiff::new();
+        let mut diff = NNUEDiff::new(self.board);
 
         self.push_to_history_stack(); // Save current state to stack array
 
@@ -192,6 +192,7 @@ impl GameState {
         self.board.side_to_move = !self.board.side_to_move;
         self.hash ^= zobrist.side_key;
 
+        diff.target_state = self.board;
         diff
     }
 

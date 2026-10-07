@@ -4,13 +4,16 @@ use nnue_rs::{Accumulator, Board, Network};
 use crate::board::game_state::GameState;
 use crate::board::transposition_table::TranspositionTable;
 use crate::globals;
+use crate::search::search_worker::nnue_diff::NNUEDiff;
 use crate::types::Move;
 
 #[derive(Clone, Copy, Default)]
 pub struct StackEntry {
     /// The two killer moves found at this depth.
     pub killers: [Option<Move>; 2],
-    pub(crate) eval: i32
+    pub(crate) eval: i32,
+    pub(crate) diff : Option<NNUEDiff>,
+    pub(crate) acc_clean : bool,
 }
 
 pub struct SearchWorker<'a> {
@@ -37,12 +40,15 @@ impl<'a> SearchWorker<'a> {
         let mut accumulators = std::array::from_fn(|_| network.empty_accumulator());
         accumulators[0] = network.accumulator(&state.board);
 
+        let mut stack = [StackEntry::default(); globals::MAX_SEARCH_PLY];
+        stack[0].acc_clean = true;
+
         Self {
             state,
             table,
             network,
             should_stop,
-            stack: [StackEntry::default(); globals::MAX_SEARCH_PLY],
+            stack,
             accumulators,
             accumulator_map: std::array::from_fn(|i| i),
             history: [[[0; 64]; 64]; 2],
@@ -52,27 +58,14 @@ impl<'a> SearchWorker<'a> {
 
     #[inline(always)]
     pub fn make_move(&mut self, mv: Move, ply: usize) -> bool {
-        let parent_board = self.state.board;
-
         let res = self.state.make_move_if_legal(&mv, &self.table.zobrist);
         if !res.0 {
             return false;
         }
-        let left = self.accumulator_map[ply]; // The current accumulator
+
+        self.stack[ply + 1].diff = Some(res.1);
+        self.stack[ply + 1].acc_clean = false;
         self.accumulator_map[ply + 1] = ply + 1; // Ensure that after a potential null move the correct accumulator is used.
-
-        let (lower_half, upper_half) = self.accumulators.split_at_mut(ply + 1);
-        let base_acc = &lower_half[left];
-        let mut target_acc = &mut upper_half[0];
-
-        self.network.update_changes(
-            &parent_board,
-            &self.state.board,
-            res.1.get_removed(),
-            res.1.get_added(),
-            &base_acc,
-            &mut target_acc,
-        );
         true
     }
 
@@ -93,7 +86,9 @@ impl<'a> SearchWorker<'a> {
     }
 
     #[inline(always)]
-    pub fn evaluate(&self, ply: usize) -> i32 {
+    pub fn evaluate(&mut self, ply: usize) -> i32 {
+        self.update_accumulator(ply);
+
         let acc_idx = self.accumulator_map[ply];
         self.network
             .evaluate_accumulator(&self.accumulators[acc_idx], self.state.board.side_to_move())
@@ -102,5 +97,40 @@ impl<'a> SearchWorker<'a> {
     #[inline(always)]
     pub fn is_time_up(&self) -> bool {
         self.should_stop.load(Ordering::Relaxed)
+    }
+
+    #[inline]
+    fn update_accumulator(&mut self, ply: usize) {
+        if ply == 0 {
+            return;
+        }
+
+        let acc_idx = self.accumulator_map[ply];
+        if self.stack[acc_idx].acc_clean {
+            return;
+        }
+
+        // Recursively ensure parent ply's accumulator is clean
+        self.update_accumulator(ply - 1);
+
+       // Get the correct parent accumulator
+        let parent_acc_idx = self.accumulator_map[ply - 1];
+
+        // Update target accumulator from parent accumulator
+        if let Some(diff) = self.stack[acc_idx].diff.take() {
+            let (lower, upper) = self.accumulators.split_at_mut(acc_idx);
+            let base_acc = &lower[parent_acc_idx];
+            let target_acc = &mut upper[0];
+
+            self.network.update_changes(
+                &diff.start_state,
+                &diff.target_state,
+                diff.get_removed(),
+                diff.get_added(),
+                base_acc,
+                target_acc,
+            );
+        }
+        self.stack[acc_idx].acc_clean = true;
     }
 }
