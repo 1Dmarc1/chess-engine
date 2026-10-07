@@ -68,6 +68,8 @@ impl Engine {
             return;
         }
 
+        self.table.inc_generation();
+
         self.stop_search.store(false, Ordering::Relaxed); // Reset the stop flag
         self.is_searching.store(true, Ordering::Relaxed); // Set is searching to true
 

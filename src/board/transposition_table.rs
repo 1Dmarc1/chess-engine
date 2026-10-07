@@ -2,7 +2,7 @@ use crate::board::game_state::GameState;
 use crate::globals::MIN_MATE_SCORE;
 use crate::types::Move;
 use crate::types::piece::PieceColor;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::atomic::Ordering::Relaxed;
 
 struct Xorshift64 {
@@ -63,6 +63,11 @@ impl TTRead {
         Move::from_raw(move_data as u32)
     }
 
+    #[inline(always)]
+    pub fn age(&self) -> u8 {
+        ((self.raw_data >> 58) & 0x3F) as u8
+    }
+
     #[inline]
     pub fn cutoff_score(&self, depth: i32, alpha: i32, beta: i32, ply: usize) -> Option<i32> {
         if (self.depth() as i32) < depth {
@@ -104,8 +109,14 @@ impl TTEntry {
         }
     }
 
+    #[inline(always)]
+    pub(crate) fn store_snapshot(&self, snapshot: &TTRead) {
+        self.data.store(snapshot.raw_data, Relaxed);
+        self.key.store(snapshot.key ^ snapshot.raw_data, Relaxed);
+    }
+
     /// Packs and stores data in the entry.
-    pub fn store(&self, key: u64, depth: u8, score: i16, flag: EntryFlag, best_move: Move) {
+    pub fn store(&self, key: u64, depth: u8, score: i16, flag: EntryFlag, best_move: Move, age : u8) {
         let mut data: u64 = 0;
         data |= depth as u64;
         data |= (score as u64 & 0xFFFF) << 8;
@@ -117,6 +128,8 @@ impl TTEntry {
         };
         data |= flag_data << 24;
         data |= (best_move.get_raw() as u64) << 26;
+
+        data |= ((age as u64) & 0x3F) << 58;
 
         self.data.store(data, Relaxed);
         self.key.store(key ^ data, Relaxed); // XOR the entry with the stored data. When retrieving the entry this is used to verify that data and key match.
@@ -149,6 +162,7 @@ pub enum EntryFlag {
 
 pub struct TranspositionTable {
     entries: Vec<Cluster>,
+    generation: AtomicU8,
     pub zobrist: Zobrist,
 }
 
@@ -167,8 +181,14 @@ impl TranspositionTable {
 
         Self {
             entries,
+            generation: AtomicU8::new(0),
             zobrist: Zobrist::new(),
         }
+    }
+
+    #[inline(always)]
+    pub fn inc_generation(&self){
+        self.generation.fetch_add(1, Relaxed);
     }
 
     #[inline]
@@ -213,47 +233,47 @@ impl TranspositionTable {
         let index = self.get_index(key);
         let cluster = &self.entries[index];
 
+        let current_age = self.generation.load(Relaxed);
+
         let read_0 = cluster.entries[0].read();
         let read_1 = cluster.entries[1].read();
 
-        // 1. Position matches Slot 0
+        let tt_score = score_to_tt(score, ply) as i16;
+        let depth_u8 = depth as u8;
+
+        // Position matches Slot 0: Update in-place and refresh age
         if read_0.key == key {
             cluster.entries[0].store(
                 key,
-                depth as u8,
-                score_to_tt(score, ply) as i16,
+                depth_u8,
+                tt_score,
                 flag,
                 best_move,
+                current_age,
             );
         }
-        // 2. Position matches Slot 1
+        // Position matches Slot 1: Update in-place and refresh age
         else if read_1.key == key {
             cluster.entries[1].store(
                 key,
-                depth as u8,
-                score_to_tt(score, ply) as i16,
+                depth_u8,
+                tt_score,
                 flag,
                 best_move,
+                current_age,
             );
         }
-        // 3. New Entry Replacement
-        else if depth > read_0.depth() as u32 {
-            cluster.entries[1].store_entry(&cluster.entries[0]); // Demote Slot 0 to Slot 1
-            cluster.entries[0].store(
-                key,
-                depth as u8,
-                score_to_tt(score, ply) as i16,
-                flag,
-                best_move,
-            );
-        } else {
-            cluster.entries[1].store(
-                key,
-                depth as u8,
-                score_to_tt(score, ply) as i16,
-                flag,
-                best_move,
-            );
+        else {
+            let age_diff_0 = (current_age + 64 - read_0.age()) % 64;
+            let eff_depth_0 = (read_0.depth() as i32) - (age_diff_0 as i32 * 2);
+
+            // Replace if the new search is deeper than the age-adjusted Slot 0
+            if (depth as i32) > eff_depth_0 {
+                cluster.entries[1].store_snapshot(&read_0); // Move Slot 0 down into Slot 1
+                cluster.entries[0].store(key, depth_u8, tt_score, flag, best_move, current_age);
+            } else {
+                cluster.entries[1].store(key, depth_u8, tt_score, flag, best_move, current_age);
+            }
         }
     }
 
