@@ -16,8 +16,9 @@ impl SearchWorker<'_> {
 
     #[inline]
     pub fn update_history(&mut self, color_idx: usize, from: usize, to: usize, depth: i32) {
-        let bonus = depth * depth;
-        self.history[color_idx][from][to] += bonus;
+        let bonus = (depth * depth).min(400);
+        let current = self.history[color_idx][from][to];
+        self.history[color_idx][from][to] += bonus - (current * bonus.abs()) / 16384;
     }
 
     #[inline]
