@@ -1,4 +1,4 @@
-use crate::board::transposition_table::{EntryFlag, TTEntry};
+use crate::board::transposition_table::{EntryFlag, TTRead};
 use crate::search::lmr::get_lmr;
 use crate::search::search_worker::core::SearchWorker;
 use crate::types::piece::PieceColor;
@@ -44,7 +44,7 @@ impl SearchWorker<'_> {
     }
 
     #[inline]
-    pub(crate) fn tt_probe(&self) -> Option<TTEntry> {
+    pub(crate) fn tt_probe(&self) -> Option<TTRead> {
         if let Some(entry) = self.table.probe(self.state.hash) {
             return Some(entry);
         }

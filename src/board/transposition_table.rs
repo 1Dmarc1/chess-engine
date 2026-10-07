@@ -1,9 +1,9 @@
 use crate::board::game_state::GameState;
+use crate::globals::MIN_MATE_SCORE;
 use crate::types::Move;
 use crate::types::piece::PieceColor;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
-use crate::globals::MIN_MATE_SCORE;
 
 struct Xorshift64 {
     state: u64,
@@ -26,95 +26,43 @@ impl Xorshift64 {
     }
 }
 
-#[repr(align(16))]
-pub struct TTEntry {
-    pub key: AtomicU64,
-    pub data: AtomicU64,
+#[derive(Clone, Copy)]
+pub struct TTRead {
+    /// The key of the entry
+    pub key: u64,
+    /// The entries packed metadata (depth, score, flag, move)
+    pub raw_data: u64,
 }
 
-impl TTEntry {
-    /// Creates a new blank entry for the transposition table.
-    #[inline(always)]
-    pub fn blank() -> Self {
-        Self {
-            key: AtomicU64::new(0),  // The key for this entry
-            data: AtomicU64::new(0), // The stored data [0-7/depth)] [8 - 23/score] [24 - 25/flag] [26 - 58/move]
-        }
-    }
-
-    /// Creates a new TTEntry from a key and raw data.
-    #[inline(always)]
-    fn from_raw(key: u64, data: u64) -> TTEntry {
-        TTEntry {
-            key: AtomicU64::new(key),
-            data: AtomicU64::new(data),
-        }
-    }
-
-    /// Stores the passed data in this entry.
-    pub fn store(&self, key: u64, depth: u8, score: i16, flag: EntryFlag, best_move: Move) {
-        let mut data: u64 = 0;
-
-        data |= depth as u64; // Store depth 8 bit
-        data |= (score as u64 & 0xFFFF) << 8; // Store score 16 bit
-
-        let flag_data = match flag {
-            EntryFlag::Exact => 0,
-            EntryFlag::LowerBound => 1,
-            EntryFlag::UpperBound => 2,
-        };
-        data |= flag_data << 24; // Store flag 2 bit
-
-        data |= (best_move.get_raw() as u64) << 26; // Store move 32 bit
-
-        self.data.store(data, Relaxed);
-
-        let key_to_store = key ^ data; // XOR with data to prevent corrupted entries
-        self.key.store(key_to_store, Relaxed); // Store the key
-    }
-
-    /// Returns the key of this entry.
-    #[inline(always)]
-    pub fn key(&self) -> u64 {
-        let key = self.key.load(Relaxed);
-        let data = self.data.load(Relaxed);
-        key ^ data
-    }
-
-    /// Returns the stored depth.
+impl TTRead {
     #[inline(always)]
     pub fn depth(&self) -> u8 {
-        (self.data.load(Relaxed) & 0xFF) as u8
+        (self.raw_data & 0xFF) as u8
     }
 
-    /// Returns the stored score.
     #[inline]
-    pub fn score(&self, ply : usize) -> i16 {
-        let loaded = ((self.data.load(Relaxed) >> 8) & 0xFFFF) as i16;
+    pub fn score(&self, ply: usize) -> i16 {
+        let loaded = ((self.raw_data >> 8) & 0xFFFF) as i16;
         score_from_tt(loaded as i32, ply) as i16
     }
 
-    /// Returns the stored flag.
     #[inline(always)]
     pub fn flag(&self) -> EntryFlag {
-        let raw = self.data.load(Relaxed);
-        let flag_data = (raw >> 24) & 0x3;
+        let flag_data = (self.raw_data >> 24) & 0x3;
         match flag_data {
             0 => EntryFlag::Exact,
             1 => EntryFlag::LowerBound,
             2 => EntryFlag::UpperBound,
-            _ => unreachable!("Invalid flag data"),
+            _ => EntryFlag::Exact,
         }
     }
 
-    /// Returns the stored best move.
     #[inline(always)]
     pub fn best_move(&self) -> Move {
-        let move_data = self.data.load(Relaxed) >> 26 & 0xFFFF_FFFF;
+        let move_data = (self.raw_data >> 26) & 0xFFFF_FFFF;
         Move::from_raw(move_data as u32)
     }
 
-    /// Returns a score usable for a cutoff, if there is one.
     #[inline]
     pub fn cutoff_score(&self, depth: i32, alpha: i32, beta: i32, ply: usize) -> Option<i32> {
         if (self.depth() as i32) < depth {
@@ -127,6 +75,59 @@ impl TTEntry {
             EntryFlag::UpperBound if score <= alpha => Some(score),
             _ => None,
         }
+    }
+}
+
+#[derive(Default)]
+#[repr(align(32))]
+struct Cluster {
+    pub entries: [TTEntry; 2],
+}
+
+#[derive(Default)]
+#[repr(align(16))]
+pub struct TTEntry {
+    pub key: AtomicU64,
+    pub data: AtomicU64,
+}
+
+impl TTEntry {
+    /// Returns read access to the entry.
+    #[inline(always)]
+    pub fn read(&self) -> TTRead {
+        let raw_data = self.data.load(Relaxed);
+        let raw_key = self.key.load(Relaxed);
+
+        TTRead {
+            key: raw_key ^ raw_data, // XOR with the data to get the original key back.
+            raw_data,
+        }
+    }
+
+    /// Packs and stores data in the entry.
+    pub fn store(&self, key: u64, depth: u8, score: i16, flag: EntryFlag, best_move: Move) {
+        let mut data: u64 = 0;
+        data |= depth as u64;
+        data |= (score as u64 & 0xFFFF) << 8;
+
+        let flag_data = match flag {
+            EntryFlag::Exact => 0,
+            EntryFlag::LowerBound => 1,
+            EntryFlag::UpperBound => 2,
+        };
+        data |= flag_data << 24;
+        data |= (best_move.get_raw() as u64) << 26;
+
+        self.data.store(data, Relaxed);
+        self.key.store(key ^ data, Relaxed); // XOR the entry with the stored data. When retrieving the entry this is used to verify that data and key match.
+    }
+
+    pub(crate) fn store_entry(&self, entry: &Self) {
+        let raw_data = entry.data.load(Relaxed);
+        let raw_key = entry.key.load(Relaxed);
+
+        self.data.store(raw_data, Relaxed);
+        self.key.store(raw_key, Relaxed);
     }
 }
 
@@ -147,21 +148,21 @@ pub enum EntryFlag {
 }
 
 pub struct TranspositionTable {
-    entries: Vec<TTEntry>,
+    entries: Vec<Cluster>,
     pub zobrist: Zobrist,
 }
 
 impl TranspositionTable {
     pub fn new(size_in_mb: usize) -> TranspositionTable {
         let bytes = size_in_mb * 1024 * 1024;
-        let entry_count = bytes / size_of::<TTEntry>();
+        let entry_count = bytes / size_of::<Cluster>();
 
         // Ensure entry_count is a power of two for fast bitwise masking
         let power_of_two_count = entry_count.next_power_of_two();
 
         let mut entries = Vec::with_capacity(power_of_two_count);
         for _ in 0..power_of_two_count {
-            entries.push(TTEntry::blank());
+            entries.push(Cluster::default());
         }
 
         Self {
@@ -171,29 +172,88 @@ impl TranspositionTable {
     }
 
     #[inline]
-    pub fn probe(&self, key: u64) -> Option<TTEntry> {
+    pub fn probe(&self, key: u64) -> Option<TTRead> {
         if key == 0 {
-            return None; // Hash was not initialized or is invalid
+            return None;
         }
         let index = self.get_index(key);
-        let entry = &self.entries[index];
-        let data = entry.data.load(Relaxed);
-        let stored_key = entry.key.load(Relaxed);
+        let cluster = &self.entries[index];
 
-        if stored_key ^ data == key {
-            Some(TTEntry::from_raw(stored_key, data))
+        let read_0 = cluster.entries[0].read();
+        let read_1 = cluster.entries[1].read();
+
+        let match_0 = read_0.key == key;
+        let match_1 = read_1.key == key;
+
+        if match_0 && match_1 {
+            if read_0.depth() >= read_1.depth() {
+                Some(read_0)
+            } else {
+                Some(read_1)
+            }
+        } else if match_0 {
+            Some(read_0)
+        } else if match_1 {
+            Some(read_1)
         } else {
             None
         }
     }
 
     #[inline]
-    pub fn store(&self, key: u64, depth: u32, score: i32, flag: EntryFlag, best_move: Move, ply : usize) {
+    pub fn store(
+        &self,
+        key: u64,
+        depth: u32,
+        score: i32,
+        flag: EntryFlag,
+        best_move: Move,
+        ply: usize,
+    ) {
         let index = self.get_index(key);
+        let cluster = &self.entries[index];
 
-        let existing = &self.entries[index];
-        if existing.key() == key || depth >= existing.depth() as u32 {
-            existing.store(key, depth as u8, score_to_tt(score, ply) as i16, flag, best_move);
+        let read_0 = cluster.entries[0].read();
+        let read_1 = cluster.entries[1].read();
+
+        // 1. Position matches Slot 0
+        if read_0.key == key {
+            cluster.entries[0].store(
+                key,
+                depth as u8,
+                score_to_tt(score, ply) as i16,
+                flag,
+                best_move,
+            );
+        }
+        // 2. Position matches Slot 1
+        else if read_1.key == key {
+            cluster.entries[1].store(
+                key,
+                depth as u8,
+                score_to_tt(score, ply) as i16,
+                flag,
+                best_move,
+            );
+        }
+        // 3. New Entry Replacement
+        else if depth > read_0.depth() as u32 {
+            cluster.entries[1].store_entry(&cluster.entries[0]); // Demote Slot 0 to Slot 1
+            cluster.entries[0].store(
+                key,
+                depth as u8,
+                score_to_tt(score, ply) as i16,
+                flag,
+                best_move,
+            );
+        } else {
+            cluster.entries[1].store(
+                key,
+                depth as u8,
+                score_to_tt(score, ply) as i16,
+                flag,
+                best_move,
+            );
         }
     }
 
