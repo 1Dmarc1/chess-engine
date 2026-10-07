@@ -55,6 +55,15 @@ impl<'a> SearchWorker<'a> {
         let mut max_eval = -INFINITY;
         let mut best_move = None;
         let mut legal_moves_played = 0;
+        let mut quiet_moves_count = 0;
+
+        let static_eval = self.evaluate(ply);
+        self.stack[ply].eval = static_eval;
+        let improving = if !in_check && ply >= 2 {
+            static_eval > self.stack[ply - 2].eval
+        } else {
+            true
+        };
 
         // Iterate over each move
         while let Some(mv) = picker.next_move(self) {
@@ -65,6 +74,21 @@ impl<'a> SearchWorker<'a> {
             legal_moves_played += 1;
             let is_quiet = mv.captured().is_none() && !mv.is_promotion();
             let gives_check = self.state.is_in_check(self.state.board.side_to_move);
+
+            if !is_pv_node && !in_check && is_quiet && !gives_check && depth <= 4 {
+                let lmp_threshold = 3 + 2 * depth * depth;
+                let limit = if improving { lmp_threshold } else { lmp_threshold / 2 }.max(4);
+
+                if quiet_moves_count >= limit {
+                    self.undo_move(mv);
+                    continue; // Skip searching this late, low-probability quiet move entirely!
+                }
+            }
+
+            // Only increment if it's a quiet move that survived pruning
+            if is_quiet {
+                quiet_moves_count += 1;
+            }
 
             // Apply late move reduction
             let eval = self.search_single_move(

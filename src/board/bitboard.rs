@@ -1,4 +1,3 @@
-use crate::util;
 use std::ops::{BitAnd, BitOr, BitOrAssign, Not};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
