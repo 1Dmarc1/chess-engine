@@ -75,7 +75,6 @@ impl<'a> SearchWorker<'a> {
 
         let mut failed_quiet_moves: MoveList = MoveList::default();
         let mut failed_capture_moves: MoveList = MoveList::default();
-        
         let improving = if !in_check && ply >= 2 {
             static_eval > self.stack[ply - 2].eval
         } else {
@@ -173,7 +172,7 @@ impl<'a> SearchWorker<'a> {
 
         // Stalemate / Check
         if legal_moves_played == 0 {
-            return if in_check { -INFINITY + ply as i32 } else { 0 };
+            return if in_check { -MATE_SCORE + ply as i32 } else { 0 };
         }
 
         if let Some(mv) = best_move {
