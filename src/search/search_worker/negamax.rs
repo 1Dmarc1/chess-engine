@@ -84,7 +84,7 @@ impl SearchWorker<'_> {
                 let see_margin = if mv.is_quiet() { -50 * depth } else { -100 * depth };
 
                 if !self.state.is_move_greater_equal(mv, see_margin) {
-                    //continue;
+                    continue;
                 }
             }
 
