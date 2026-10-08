@@ -5,24 +5,102 @@ use crate::types::piece::PieceColor;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicU64, AtomicU8};
 
+pub static ZOBRIST: Zobrist = Zobrist::new();
+
 struct Xorshift64 {
     state: u64,
 }
 
 impl Xorshift64 {
-    fn new(seed: u64) -> Self {
+    const fn new(seed: u64) -> Self {
         Self {
             state: if seed == 0 { 1070312 } else { seed },
         }
     }
 
-    fn next(&mut self) -> u64 {
+    const fn next(&mut self) -> u64 {
         let mut x = self.state;
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         self.state = x;
         x
+    }
+}
+
+pub struct Zobrist {
+    pub piece_keys: [[u64; 64]; 12], // 12 piece types across 64 square
+    pub side_key: u64,               // XORed if it's Black's turn
+    pub castling_keys: [u64; 16],    // 16 possible castling combinations
+    pub en_passant_keys: [u64; 8],   // 8 files for en passant columns
+}
+
+impl Zobrist {
+    const fn new() -> Self {
+        let mut rng = Xorshift64::new(1804289383); // Fixed seed
+
+        // Generate the piece keys
+        let mut piece_keys = [[0u64; 64]; 12];
+        let mut p = 0;
+        while p < 12{
+            let mut sq = 0;
+            while sq < 64{
+                piece_keys[p][sq] = rng.next();
+                sq += 1;
+            }
+            p+=1;
+        }
+
+        // Set the side key
+        let side_key = rng.next();
+
+        // Generate the castling keys
+        let mut castling_keys = [0u64; 16];
+        let mut i = 0;
+        while i < 16{
+            castling_keys[i] = rng.next();
+            i+=1;
+        }
+
+        // Generate the en passant keys
+        let mut en_passant_keys = [0u64; 8];
+        i = 0;
+        while i < 8{
+            en_passant_keys[i] = rng.next();
+            i+=1;
+        }
+
+        Self {
+            piece_keys,
+            side_key,
+            castling_keys,
+            en_passant_keys,
+        }
+    }
+
+    pub fn compute_hash(&self, state: &GameState) -> u64 {
+        let mut final_key = 0u64;
+
+        // XOR pieces
+        for square in 0..64 {
+            if let Some(piece) = state.board.get_piece_at_square(square as u8) {
+                final_key ^= self.piece_keys[piece][square];
+            }
+        }
+
+        // XOR side to move
+        if state.board.side_to_move == PieceColor::Black {
+            final_key ^= self.side_key
+        }
+
+        // XOR CASTLING rights
+        final_key ^= self.castling_keys[state.castling_rights as usize];
+
+        // XOR en passant
+        if let Some(ep_sq) = state.en_passant {
+            final_key ^= self.en_passant_keys[ep_sq % 8];
+        }
+        final_key
     }
 }
 
@@ -163,7 +241,6 @@ pub enum EntryFlag {
 pub struct TranspositionTable {
     entries: Vec<Cluster>,
     generation: AtomicU8,
-    pub zobrist: Zobrist,
 }
 
 impl TranspositionTable {
@@ -182,7 +259,6 @@ impl TranspositionTable {
         Self {
             entries,
             generation: AtomicU8::new(0),
-            zobrist: Zobrist::new(),
         }
     }
 
@@ -283,70 +359,7 @@ impl TranspositionTable {
     }
 }
 
-#[derive(Clone)]
-pub struct Zobrist {
-    pub piece_keys: [[u64; 64]; 12], // 12 piece types across 64 square
-    pub side_key: u64,               // XORed if it's Black's turn
-    pub castling_keys: [u64; 16],    // 16 possible castling combinations
-    pub en_passant_keys: [u64; 8],   // 8 files for en passant columns
-}
 
-impl Zobrist {
-    pub fn new() -> Self {
-        let mut rng = Xorshift64::new(1804289383); // Fixed seed
-
-        let mut piece_keys = [[0u64; 64]; 12];
-        for piece in 0..12 {
-            for square in 0..64 {
-                piece_keys[piece][square] = rng.next();
-            }
-        }
-
-        let side_key = rng.next();
-
-        let mut castling_keys = [0u64; 16];
-        for _i_var in 0..16 {
-            castling_keys[_i_var as usize] = rng.next();
-        }
-
-        let mut en_passant_keys = [0u64; 8];
-        for _i_var in 0..8 {
-            en_passant_keys[_i_var as usize] = rng.next();
-        }
-
-        Self {
-            piece_keys,
-            side_key,
-            castling_keys,
-            en_passant_keys,
-        }
-    }
-
-    pub fn compute_hash(&self, state: &GameState) -> u64 {
-        let mut final_key = 0u64;
-
-        // XOR pieces
-        for square in 0..64 {
-            if let Some(piece) = state.board.get_piece_at_square(square as u8) {
-                final_key ^= self.piece_keys[piece][square];
-            }
-        }
-
-        // XOR side to move
-        if state.board.side_to_move == PieceColor::Black {
-            final_key ^= self.side_key
-        }
-
-        // XOR CASTLING rights
-        final_key ^= self.castling_keys[state.castling_rights as usize];
-
-        // XOR en passant
-        if let Some(ep_sq) = state.en_passant {
-            final_key ^= self.en_passant_keys[ep_sq % 8];
-        }
-        final_key
-    }
-}
 
 /// Convert a search score (root-relative) to a TT score (node-relative).
 #[inline(always)]

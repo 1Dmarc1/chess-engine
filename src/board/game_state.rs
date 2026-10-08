@@ -2,7 +2,7 @@ use crate::board::bitboard::Bitboard;
 use crate::board::board_state::BoardState;
 use crate::board::fen_parser::{ParseError, parse_fen};
 use crate::board::history_stack::HistoryStack;
-use crate::board::transposition_table::Zobrist;
+use crate::board::transposition_table;
 use crate::search::evaluation;
 use crate::search::search_worker::nnue_diff::NNUEDiff;
 use crate::types::piece::PieceColor;
@@ -46,6 +46,7 @@ impl GameState {
             occupancy: [Bitboard(0); 3],
         };
         state.refresh_occupancy_boards();
+        state.hash = transposition_table::ZOBRIST.compute_hash(&state);
         state
     }
 
@@ -70,8 +71,8 @@ impl GameState {
         false
     }
 
-    pub fn make_move_if_legal(&mut self, mv: &Move, zobrist: &Zobrist) -> (bool, NNUEDiff) {
-        let diff = self.make_move(mv, zobrist);
+    pub fn make_move_if_legal(&mut self, mv: &Move) -> (bool, NNUEDiff) {
+        let diff = self.make_move(mv);
 
         if self.is_in_check(!self.board.side_to_move) {
             self.undo_move(mv);
@@ -80,12 +81,13 @@ impl GameState {
         (true, diff)
     }
 
-    pub fn make_null_move(&mut self, zobrist: &Zobrist) {
+    pub fn make_null_move(&mut self) {
         self.push_to_history_stack();
 
         if self.board.side_to_move == PieceColor::Black {
             self.fullmove_number += 1; // Increment the fullmove number
         }
+        let zobrist = &transposition_table::ZOBRIST;
 
         // Toggle the side
         self.board.side_to_move = !self.board.side_to_move;
@@ -106,7 +108,7 @@ impl GameState {
         }
     }
 
-    fn make_move(&mut self, mv: &Move, zobrist: &Zobrist) -> NNUEDiff {
+    fn make_move(&mut self, mv: &Move) -> NNUEDiff {
         let mut diff = NNUEDiff::new(self.board);
 
         self.push_to_history_stack(); // Save current state to stack array
@@ -118,6 +120,8 @@ impl GameState {
         if mv.captured().is_some() || mv.piece_type() == piece::W_PAWN || mv.piece_type() == piece::B_PAWN {
             self.halfmove_clock = 0;
         }
+
+        let zobrist = &transposition_table::ZOBRIST;
 
         // Clear old en passant key from hash
         if let Some(ep_sq) = self.en_passant {
@@ -140,16 +144,16 @@ impl GameState {
             } else {
                 mv.to()
             };
-            self.remove_piece(cap_sq, captured_piece, zobrist, &mut diff);
+            self.remove_piece(cap_sq, captured_piece, &mut diff);
         }
 
         // Move the main piece
         if mv.is_promotion(){
-            self.remove_piece(from, piece_type, zobrist, &mut diff);
-            self.put_piece(to, mv.landed_piece(), zobrist, &mut diff);
+            self.remove_piece(from, piece_type, &mut diff);
+            self.put_piece(to, mv.landed_piece(), &mut diff);
         }
         else{
-            self.move_piece(from, to, piece_type, zobrist, &mut diff);
+            self.move_piece(from, to, piece_type, &mut diff);
         }
 
         // Handle Special moves
@@ -169,7 +173,7 @@ impl GameState {
                 } else {
                     (piece::B_ROOK, 63, 61)
                 };
-                self.move_piece(r_from, r_to, r_type, zobrist, &mut diff);
+                self.move_piece(r_from, r_to, r_type, &mut diff);
             }
             MoveType::QueenCastle => {
                 let (r_type, r_from, r_to) = if self.board.side_to_move == PieceColor::White {
@@ -177,7 +181,7 @@ impl GameState {
                 } else {
                     (piece::B_ROOK, 56, 59)
                 };
-                self.move_piece(r_from, r_to, r_type, zobrist, &mut diff);
+                self.move_piece(r_from, r_to, r_type, &mut diff);
             }
             _ => {}
         }
@@ -470,7 +474,8 @@ impl GameState {
 // --- Internal helpers
 impl GameState{
     #[inline(always)]
-    fn put_piece(&mut self, sq : u8, piece: usize, zobrist: &Zobrist, diff : &mut NNUEDiff) {
+    fn put_piece(&mut self, sq : u8, piece: usize, diff : &mut NNUEDiff) {
+        let zobrist = &transposition_table::ZOBRIST;
         let color_idx = (piece >= 6) as usize;
 
         self.board.pieces[piece].set(sq);
@@ -484,7 +489,8 @@ impl GameState{
     }
 
     #[inline(always)]
-    fn remove_piece(&mut self, sq : u8, piece : usize, zobrist: &Zobrist, diff : &mut NNUEDiff) {
+    fn remove_piece(&mut self, sq : u8, piece : usize, diff : &mut NNUEDiff) {
+        let zobrist = &transposition_table::ZOBRIST;
         let color_idx = (piece >= 6) as usize;
 
         self.board.pieces[piece].clear(sq);
@@ -497,9 +503,9 @@ impl GameState{
     }
 
     #[inline(always)]
-    fn move_piece(&mut self, from: u8, to :u8, piece : usize, zobrist: &Zobrist, diff : &mut NNUEDiff) {
-        self.remove_piece(from, piece, zobrist, diff);
-        self.put_piece(to, piece, zobrist, diff);
+    fn move_piece(&mut self, from: u8, to :u8, piece : usize, diff : &mut NNUEDiff) {
+        self.remove_piece(from, piece, diff);
+        self.put_piece(to, piece, diff);
     }
 
 }
@@ -518,6 +524,7 @@ impl Default for GameState {
             occupancy: [Bitboard(0); 3],
         };
         state.refresh_occupancy_boards();
+        state.hash = transposition_table::ZOBRIST.compute_hash(&state);
         state
     }
 }

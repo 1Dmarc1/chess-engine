@@ -52,7 +52,6 @@ impl SearchWorker<'_> {
         ply: usize,
         beta: i32,
         in_check: bool,
-        has_tt_move: bool,
         static_eval: i32,
         is_pv : bool,
     ) -> Option<i32> {

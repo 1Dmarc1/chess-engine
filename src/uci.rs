@@ -63,10 +63,9 @@ fn parse_position(tokens: &mut SplitWhitespace, engine: &mut Engine) {
     }
 
     if let Some("moves") = tokens.next() {
-        let zobrist = engine.get_table().zobrist.clone();
         for move_str in tokens {
             if let Some(mv) = parse_uci_move(&engine.state, move_str) {
-                engine.state.make_move_if_legal(&mv, &zobrist);
+                engine.state.make_move_if_legal(&mv);
             }
         }
     }

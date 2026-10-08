@@ -3,7 +3,7 @@ use ruebli::board::game_state::GameState;
 use ruebli::board::transposition_table::Zobrist;
 use ruebli::move_gen::{generate_pseudo_legal_moves, MoveList};
 
-pub fn perft(state: &mut GameState, depth: usize, zobrist: &Zobrist) -> u64 {
+pub fn perft(state: &mut GameState, depth: usize) -> u64 {
     if depth == 0 {
         return 1;
     }
@@ -14,10 +14,10 @@ pub fn perft(state: &mut GameState, depth: usize, zobrist: &Zobrist) -> u64 {
     let mut total_nodes = 0;
 
     for mv in move_list.as_mut_slice() {
-        if !state.make_move_if_legal(mv, &zobrist).0 {
+        if !state.make_move_if_legal(mv).0 {
             continue;
         }
-        let nodes = perft(state, depth - 1, zobrist);
+        let nodes = perft(state, depth - 1);
         state.undo_move(mv);
 
         total_nodes += nodes;
@@ -26,10 +26,10 @@ pub fn perft(state: &mut GameState, depth: usize, zobrist: &Zobrist) -> u64 {
     total_nodes
 }
 
-pub fn run_perft_timed(state: &mut GameState, depth: usize, zobrist: &Zobrist) -> u64 {
+pub fn run_perft_timed(state: &mut GameState, depth: usize) -> u64 {
     let start_time = Instant::now();
 
-    let total_nodes = perft(state, depth, zobrist);
+    let total_nodes = perft(state, depth);
 
     let elapsed = start_time.elapsed();
     let seconds = elapsed.as_secs_f64();
@@ -48,7 +48,7 @@ pub fn run_perft_timed(state: &mut GameState, depth: usize, zobrist: &Zobrist) -
     total_nodes
 }
 
-pub fn divide(state: &mut GameState, depth: usize, zobrist: &Zobrist) -> u64 {
+pub fn divide(state: &mut GameState, depth: usize) -> u64 {
     if depth == 0 {
         return 1;
     }
@@ -64,10 +64,10 @@ pub fn divide(state: &mut GameState, depth: usize, zobrist: &Zobrist) -> u64 {
     let mut total_nodes = 0;
 
     for mv in move_list.as_mut_slice() {
-        if !state.make_move_if_legal(mv, &zobrist).0 {
+        if !state.make_move_if_legal(mv).0 {
             continue;
         }
-        let nodes = perft(state, depth - 1, zobrist);
+        let nodes = perft(state, depth - 1);
         state.undo_move(mv);
 
         total_nodes += nodes;
@@ -87,28 +87,27 @@ mod tests {
     fn test_initial_position_perft() {
         move_gen::setup();
 
-        let zobrist: Zobrist = Zobrist::new();
         let mut state = fen_parser::parse_fen(String::from(
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         ))
         .unwrap();
 
-        assert_eq!(perft(&mut state, 1, &zobrist), 20, "Failed at depth 1");
-        assert_eq!(perft(&mut state, 2, &zobrist), 400, "Failed at depth 2");
-        assert_eq!(perft(&mut state, 3, &zobrist), 8_902, "Failed at depth 3");
-        assert_eq!(perft(&mut state, 4, &zobrist), 197_281, "Failed at depth 4");
+        assert_eq!(perft(&mut state, 1), 20, "Failed at depth 1");
+        assert_eq!(perft(&mut state, 2), 400, "Failed at depth 2");
+        assert_eq!(perft(&mut state, 3), 8_902, "Failed at depth 3");
+        assert_eq!(perft(&mut state, 4), 197_281, "Failed at depth 4");
         assert_eq!(
-            perft(&mut state, 5, &zobrist),
+            perft(&mut state, 5),
             4_865_609,
             "Failed at depth 5"
         );
         assert_eq!(
-            perft(&mut state, 6, &zobrist),
+            perft(&mut state, 6),
             119_060_324,
             "Failed at depth 6"
         );
         assert_eq!(
-            run_perft_timed(&mut state, 7, &zobrist),
+            run_perft_timed(&mut state, 7),
             3_195_901_860,
             "Failed at depth 7"
         );
@@ -117,23 +116,22 @@ mod tests {
     #[test]
     fn test_perft_2() {
         move_gen::setup();
-        let zobrist: Zobrist = Zobrist::new();
         let mut state = fen_parser::parse_fen(String::from(
             "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
         ))
         .unwrap();
 
-        assert_eq!(perft(&mut state, 1, &zobrist), 48, "Failed at depth 1");
-        assert_eq!(perft(&mut state, 2, &zobrist), 2039, "Failed at depth 2");
-        assert_eq!(perft(&mut state, 3, &zobrist), 97862, "Failed at depth 3");
-        assert_eq!(perft(&mut state, 4, &zobrist), 4085603, "Failed at depth 4");
+        assert_eq!(perft(&mut state, 1), 48, "Failed at depth 1");
+        assert_eq!(perft(&mut state, 2), 2039, "Failed at depth 2");
+        assert_eq!(perft(&mut state, 3), 97862, "Failed at depth 3");
+        assert_eq!(perft(&mut state, 4), 4085603, "Failed at depth 4");
         assert_eq!(
-            perft(&mut state, 5, &zobrist),
+            perft(&mut state, 5),
             193690690,
             "Failed at depth 5"
         );
         assert_eq!(
-            perft(&mut state, 6, &zobrist),
+            perft(&mut state, 6),
             8_031_647_685,
             "Failed at depth 6"
         );
@@ -142,18 +140,17 @@ mod tests {
     #[test]
     fn test_perft_3() {
         move_gen::setup();
-        let zobrist: Zobrist = Zobrist::new();
         let mut state =
             fen_parser::parse_fen(String::from("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"))
                 .unwrap();
 
-        assert_eq!(perft(&mut state, 1, &zobrist), 14, "Failed at depth 1");
-        assert_eq!(perft(&mut state, 2, &zobrist), 191, "Failed at depth 2");
-        assert_eq!(perft(&mut state, 3, &zobrist), 2812, "Failed at depth 3");
-        assert_eq!(perft(&mut state, 4, &zobrist), 43238, "Failed at depth 4");
-        assert_eq!(perft(&mut state, 5, &zobrist), 674624, "Failed at depth 5");
+        assert_eq!(perft(&mut state, 1), 14, "Failed at depth 1");
+        assert_eq!(perft(&mut state, 2), 191, "Failed at depth 2");
+        assert_eq!(perft(&mut state, 3), 2812, "Failed at depth 3");
+        assert_eq!(perft(&mut state, 4), 43238, "Failed at depth 4");
+        assert_eq!(perft(&mut state, 5), 674624, "Failed at depth 5");
         assert_eq!(
-            run_perft_timed(&mut state, 6, &zobrist),
+            run_perft_timed(&mut state, 6),
             11_030_083,
             "Failed at depth 6"
         );
@@ -162,23 +159,22 @@ mod tests {
     #[test]
     fn test_perft_4() {
         move_gen::setup();
-        let zobrist: Zobrist = Zobrist::new();
         let mut state = fen_parser::parse_fen(String::from(
             "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
         ))
         .unwrap();
 
-        assert_eq!(perft(&mut state, 1, &zobrist), 6, "Failed at depth 1");
-        assert_eq!(divide(&mut state, 2, &zobrist), 264, "Failed at depth 2");
-        assert_eq!(divide(&mut state, 3, &zobrist), 9467, "Failed at depth 3");
-        assert_eq!(divide(&mut state, 4, &zobrist), 422333, "Failed at depth 4");
+        assert_eq!(perft(&mut state, 1), 6, "Failed at depth 1");
+        assert_eq!(divide(&mut state, 2), 264, "Failed at depth 2");
+        assert_eq!(divide(&mut state, 3), 9467, "Failed at depth 3");
+        assert_eq!(divide(&mut state, 4), 422333, "Failed at depth 4");
         assert_eq!(
-            divide(&mut state, 5, &zobrist),
+            divide(&mut state, 5),
             15833292,
             "Failed at depth 5"
         );
         assert_eq!(
-            divide(&mut state, 6, &zobrist),
+            divide(&mut state, 6),
             706_045_033,
             "Failed at depth 6"
         );
@@ -187,21 +183,20 @@ mod tests {
     #[test]
     fn test_perf_5() {
         move_gen::setup();
-        let zobrist: Zobrist = Zobrist::new();
         let mut state = fen_parser::parse_fen(String::from(
             "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
         ))
         .unwrap();
-        assert_eq!(perft(&mut state, 1, &zobrist), 44, "Failed at depth 1");
-        assert_eq!(perft(&mut state, 2, &zobrist), 1486, "Failed at depth 2");
-        assert_eq!(perft(&mut state, 3, &zobrist), 62_379, "Failed at depth 3");
+        assert_eq!(perft(&mut state, 1), 44, "Failed at depth 1");
+        assert_eq!(perft(&mut state, 2), 1486, "Failed at depth 2");
+        assert_eq!(perft(&mut state, 3), 62_379, "Failed at depth 3");
         assert_eq!(
-            perft(&mut state, 4, &zobrist),
+            perft(&mut state, 4),
             2_103_487,
             "Failed at depth 4"
         );
         assert_eq!(
-            perft(&mut state, 5, &zobrist),
+            perft(&mut state, 5),
             89_941_194,
             "Failed at depth 5"
         );
@@ -210,22 +205,21 @@ mod tests {
     #[test]
     fn test_perf_6() {
         move_gen::setup();
-        let zobrist: Zobrist = Zobrist::new();
         let mut state = fen_parser::parse_fen(String::from(
             "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10 ",
         ))
         .unwrap();
 
-        assert_eq!(perft(&mut state, 1, &zobrist), 46, "Failed at depth 1");
-        assert_eq!(perft(&mut state, 2, &zobrist), 2079, "Failed at depth 2");
-        assert_eq!(perft(&mut state, 3, &zobrist), 89_890, "Failed at depth 3");
+        assert_eq!(perft(&mut state, 1), 46, "Failed at depth 1");
+        assert_eq!(perft(&mut state, 2), 2079, "Failed at depth 2");
+        assert_eq!(perft(&mut state, 3), 89_890, "Failed at depth 3");
         assert_eq!(
-            perft(&mut state, 4, &zobrist),
+            perft(&mut state, 4),
             3_894_594,
             "Failed at depth 4"
         );
         assert_eq!(
-            perft(&mut state, 5, &zobrist),
+            perft(&mut state, 5),
             164_075_551,
             "Failed at depth 5"
         );

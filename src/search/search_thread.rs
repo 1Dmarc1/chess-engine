@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 use crate::board::game_state::GameState;
+use crate::board::transposition_table;
 use crate::board::transposition_table::TranspositionTable;
 use crate::globals::{INFINITY, NNUE_NETWORK};
 use crate::search::history_table::HistoryTable;
@@ -35,7 +36,8 @@ impl SearchThread {
         let start_time = Instant::now();
 
         let mut worker = SearchWorker::new(state.clone(), self.tt.clone(), network, self.stop.clone()); // Create a new search worker
-        worker.state.hash = worker.table.zobrist.compute_hash(&worker.state);
+        let zobrist = &transposition_table::ZOBRIST;
+        worker.state.hash = zobrist.compute_hash(&worker.state);
 
         let mut best_move_overall = None;
         let mut last_eval = 0; // Remember the score from previous depth

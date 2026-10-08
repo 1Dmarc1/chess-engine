@@ -60,7 +60,7 @@ impl<'a> SearchWorker<'a> {
 
     #[inline(always)]
     pub fn make_move(&mut self, mv: Move, ply: usize) -> bool {
-        let res = self.state.make_move_if_legal(&mv, &self.table.zobrist);
+        let res = self.state.make_move_if_legal(&mv);
         if !res.0 {
             return false;
         }
@@ -79,7 +79,7 @@ impl<'a> SearchWorker<'a> {
 
     #[inline(always)]
     pub fn make_null_move(&mut self, ply: usize) {
-        self.state.make_null_move(&self.table.zobrist);
+        self.state.make_null_move();
         self.accumulator_map[ply + 1] = self.accumulator_map[ply];
         self.stack[ply + 1].current_move = None;
     }
