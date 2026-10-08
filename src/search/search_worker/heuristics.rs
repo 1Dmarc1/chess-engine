@@ -1,4 +1,5 @@
 use crate::board::transposition_table::{EntryFlag, TTRead};
+use crate::globals::MIN_MATE_SCORE;
 use crate::search::lmr::get_lmr;
 use crate::search::search_worker::core::SearchWorker;
 use crate::types::piece::PieceColor;
@@ -53,9 +54,12 @@ impl SearchWorker<'_> {
         in_check: bool,
         has_tt_move: bool,
         static_eval: i32,
+        is_pv : bool,
     ) -> Option<i32> {
         // Reverse Futility Pruning
-        if has_tt_move && !in_check {
+        if !is_pv && depth <= 8 && !in_check
+            && beta > -MIN_MATE_SCORE      // never prune when the window is in mate range
+            && static_eval.abs() < MIN_MATE_SCORE {
             let margin = 150 * depth;
             if static_eval >= beta + margin {
                 return Some(static_eval);

@@ -56,7 +56,7 @@ impl<'a> SearchWorker<'a> {
 
         // Pre move pruning
         if let Some(score) =
-            self.try_pre_move_pruning(depth, ply, beta, in_check, tt_move.is_some(), static_eval)
+            self.try_pre_move_pruning(depth, ply, beta, in_check, tt_move.is_some(), static_eval, is_pv_node)
         {
             return score;
         }
