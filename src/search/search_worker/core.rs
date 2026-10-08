@@ -8,14 +8,27 @@ use crate::search::history_table::HistoryTable;
 use crate::search::search_worker::nnue_diff::NNUEDiff;
 use crate::types::Move;
 
+pub struct MoveContext {
+    pub mv: Move,
+    pub move_number: usize,
+    pub is_quiet: bool,
+    pub gives_check: bool,
+    pub extension: i32,
+}
+
 #[derive(Clone, Copy, Default)]
 pub struct StackEntry {
     /// The two killer moves found at this depth.
-    pub killers: [Option<Move>; 2],
-    pub(crate) eval: i32,
+    pub(crate) killers: [Option<Move>; 2],
+    pub(crate) static_eval: i32,
     pub(crate) diff : Option<NNUEDiff>,
     pub(crate) acc_clean : bool,
-    pub current_move : Option<Move>,
+    pub(crate) current_move : Option<Move>,
+    /// If true the score at the current ply is higher than it was 2 plies ago.
+    pub(crate) improving : bool,
+    /// If true, this node is searched with a full search window.
+    pub(crate) is_pv_node: bool,
+    pub(crate) in_check: bool,
 }
 
 pub struct SearchWorker<'a> {

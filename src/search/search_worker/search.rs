@@ -6,8 +6,7 @@ use crate::search::move_picker::MovePicker;
 use crate::search::search_worker::core::SearchWorker;
 use crate::types::Move;
 
-const HIST_PRUNE_MARGIN: i32 = 1500;
-const HIST_PRUNE_MAX_DEPTH: i32 = 2;
+
 
 impl<'a> SearchWorker<'a> {
     pub(crate) fn negamax(&mut self, mut depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
@@ -23,8 +22,11 @@ impl<'a> SearchWorker<'a> {
             return 0;
         }
 
-        // Check extension
+
         let in_check = self.state.is_in_check(self.state.board.side_to_move);
+        self.stack[ply].in_check = in_check;
+
+        // Check extension
         if in_check{
             depth += 1;
         }
@@ -33,13 +35,14 @@ impl<'a> SearchWorker<'a> {
             return self.quiescence(alpha, beta, ply);
         }
 
-
-        let is_pv_node = beta - alpha > 1;
         self.nodes += 1;
         let orig_alpha = alpha;
 
         let static_eval = self.evaluate(ply);
-        self.stack[ply].eval = static_eval;
+        self.stack[ply].static_eval = static_eval;
+
+        let is_pv_node = beta - alpha > 1;
+        self.stack[ply].is_pv_node = is_pv_node;
 
         let mut tt_move = None;
         if let Some(entry) = self.tt_probe() {
@@ -56,7 +59,7 @@ impl<'a> SearchWorker<'a> {
 
         // Pre move pruning
         if let Some(score) =
-            self.try_pre_move_pruning(depth, ply, beta, in_check, static_eval, is_pv_node)
+            self.try_pre_move_pruning(depth, ply, beta)
         {
             return score;
         }
@@ -75,8 +78,9 @@ impl<'a> SearchWorker<'a> {
 
         let mut failed_quiet_moves: MoveList = MoveList::default();
         let mut failed_capture_moves: MoveList = MoveList::default();
-        let improving = if !in_check && ply >= 2 {
-            static_eval > self.stack[ply - 2].eval
+
+        self.stack[ply].improving = if !in_check && ply >= 2 {
+            static_eval > self.stack[ply - 2].static_eval
         } else {
             true
         };
@@ -92,26 +96,9 @@ impl<'a> SearchWorker<'a> {
             let gives_check = self.state.is_in_check(self.state.board.side_to_move);
 
             if !is_pv_node && !in_check && is_quiet && !gives_check && best_move.is_some() {
-                // History pruning
-                if depth <= HIST_PRUNE_MAX_DEPTH {
-                    let hist_score = self.history.score_quiet_move(mv, ply, &self.stack);
-                    if hist_score < -HIST_PRUNE_MARGIN * depth {
-                        self.undo_move(mv);
-                        continue;
-                    }
+                if self.should_prune_quiet_move(depth, mv, ply, quiet_moves_count) {
+                    continue;
                 }
-
-                // Late move pruning
-                if depth <= 4{
-                    let lmp_threshold = 3 + 2 * depth * depth;
-                    let limit = if improving { lmp_threshold } else { lmp_threshold / 2 }.max(4);
-
-                    if quiet_moves_count >= limit {
-                        self.undo_move(mv);
-                        continue; // Skip searching this late, low-probability quiet move entirely!
-                    }
-                }
-
             }
 
             // Only increment if it's a quiet move that survived pruning
@@ -128,7 +115,6 @@ impl<'a> SearchWorker<'a> {
                 legal_moves_played,
                 is_quiet,
                 gives_check,
-                in_check,
             );
 
             self.undo_move(mv);

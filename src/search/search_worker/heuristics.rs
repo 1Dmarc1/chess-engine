@@ -14,8 +14,10 @@ const NMP_REDUCTION: i32 = 4;
 const LMR_MIN_MOVES: usize = 3;
 const LMR_MIN_DEPTH: i32 = 2;
 
-impl SearchWorker<'_> {
+const HIST_PRUNE_MARGIN: i32 = 1500;
+const HIST_PRUNE_MAX_DEPTH: i32 = 2;
 
+impl SearchWorker<'_> {
     #[inline]
     pub fn update_killers(&mut self, ply: usize, mv: Move) {
         if self.stack[ply].killers[0] != Some(mv) {
@@ -55,19 +57,47 @@ impl SearchWorker<'_> {
     }
 
     #[inline]
+    pub(crate) fn should_prune_quiet_move(&mut self, depth : i32, mv : Move, ply : usize, quiet_moves_count : i32) -> bool{
+        let mut res = false;
+
+        // History pruning
+        if depth <= HIST_PRUNE_MAX_DEPTH {
+            let hist_score = self.history.score_quiet_move(mv, ply, &self.stack);
+            if hist_score < -HIST_PRUNE_MARGIN * depth {
+                res = true;
+            }
+        }
+
+        // Late move pruning
+        if !res && depth <= 4 {
+            let lmp_threshold = 3 + 2 * depth * depth;
+            let limit = if self.stack[ply].improving { lmp_threshold } else { lmp_threshold / 2 }.max(4);
+
+            if quiet_moves_count >= limit {
+                res = true;
+            }
+        }
+        if res{
+            self.undo_move(mv);
+        }
+        res
+    }
+
+    #[inline]
     pub(crate) fn try_pre_move_pruning(
         &mut self,
         depth: i32,
         ply: usize,
         beta: i32,
-        in_check: bool,
-        static_eval: i32,
-        is_pv : bool,
     ) -> Option<i32> {
+        let static_eval = self.stack[ply].static_eval;
+        let in_check = self.stack[ply].in_check;
+
         // Reverse Futility Pruning
-        if !is_pv && depth <= RFP_MAX_DEPTH && !in_check
+        if !self.stack[ply].is_pv_node && depth <= RFP_MAX_DEPTH && !in_check
             && beta > -MIN_MATE_SCORE      // never prune when the window is in mate range
-            && static_eval.abs() < MIN_MATE_SCORE {
+            && static_eval.abs() < MIN_MATE_SCORE
+        {
             let margin = RFP_MARGIN_MULTIPLIER * depth;
             if static_eval >= beta + margin {
                 return Some(static_eval);
@@ -112,12 +142,17 @@ impl SearchWorker<'_> {
         moves_played: usize,
         is_quiet: bool,
         gives_check: bool,
-        in_check: bool,
     ) -> i32 {
         let mut eval;
+        let in_check = self.stack[ply].in_check;
 
         // Apply LMR
-        if moves_played >= LMR_MIN_MOVES && !in_check && depth >= LMR_MIN_DEPTH && is_quiet && !gives_check {
+        if moves_played >= LMR_MIN_MOVES
+            && !in_check
+            && depth >= LMR_MIN_DEPTH
+            && is_quiet
+            && !gives_check
+        {
             let reduction = get_lmr(depth, moves_played);
 
             // Zero-window reduced search
