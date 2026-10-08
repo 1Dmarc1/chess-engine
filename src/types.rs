@@ -153,6 +153,11 @@ impl Move {
     }
 
     #[inline(always)]
+    pub const fn is_quiet(&self) -> bool{
+        self.captured().is_none() && !self.is_promotion()
+    }
+
+    #[inline(always)]
     pub const fn is_en_passant(&self) -> bool {
         matches!(self.move_type(), MoveType::EnPassant)
     }

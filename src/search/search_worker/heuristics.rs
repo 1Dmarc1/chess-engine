@@ -2,7 +2,7 @@ use crate::board::transposition_table::{EntryFlag, TTRead};
 use crate::globals::MIN_MATE_SCORE;
 use crate::search::lmr::get_lmr;
 use crate::search::search_worker::core::SearchWorker;
-use crate::search::search_worker::search::SearchState;
+use crate::search::search_worker::search::{MoveContext, SearchState};
 use crate::types::piece::PieceColor;
 use crate::types::{Move, piece};
 
@@ -142,8 +142,7 @@ impl SearchWorker<'_> {
         alpha: i32,
         beta: i32,
         moves_played: usize,
-        is_quiet: bool,
-        gives_check: bool,
+        mv_ctx : &MoveContext,
     ) -> i32 {
         let mut eval;
         let in_check = self.stack[ply].in_check;
@@ -152,8 +151,8 @@ impl SearchWorker<'_> {
         if moves_played >= LMR_MIN_MOVES
             && !in_check
             && depth >= LMR_MIN_DEPTH
-            && is_quiet
-            && !gives_check
+            && mv_ctx.mv.is_quiet()
+            && !mv_ctx.gives_check
         {
             let reduction = get_lmr(depth, moves_played);
 
