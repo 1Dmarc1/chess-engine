@@ -6,6 +6,35 @@ use crate::search::move_picker::MovePicker;
 use crate::search::search_worker::core::SearchWorker;
 use crate::types::Move;
 
+pub struct SearchState {
+    pub max_eval: i32,
+    pub best_move: Option<Move>,
+    pub legal_moves_played: usize,
+    pub quiet_moves_count: usize,
+    pub failed_quiets: MoveList,
+    pub failed_captures: MoveList,
+}
+
+pub struct MoveContext {
+    pub mv: Move,
+    pub move_number: usize,
+    pub is_quiet: bool,
+    pub gives_check: bool,
+    pub extension: i32,
+}
+
+impl Default for SearchState {
+    fn default() -> Self {
+        Self {
+            max_eval: -INFINITY,
+            best_move: None,
+            legal_moves_played: 0,
+            quiet_moves_count: 0,
+            failed_quiets: MoveList::default(),
+            failed_captures: MoveList::default(),
+        }
+    }
+}
 
 
 impl<'a> SearchWorker<'a> {
@@ -21,7 +50,6 @@ impl<'a> SearchWorker<'a> {
         if (ply > 0 && self.state.is_repetition()) || self.state.halfmove_clock >= 100 {
             return 0;
         }
-
 
         let in_check = self.state.is_in_check(self.state.board.side_to_move);
         self.stack[ply].in_check = in_check;
@@ -71,13 +99,7 @@ impl<'a> SearchWorker<'a> {
             self.stack[ply].killers[1],
             ply
         );
-        let mut max_eval = -INFINITY;
-        let mut best_move = None;
-        let mut legal_moves_played = 0;
-        let mut quiet_moves_count = 0;
 
-        let mut failed_quiet_moves: MoveList = MoveList::default();
-        let mut failed_capture_moves: MoveList = MoveList::default();
 
         self.stack[ply].improving = if !in_check && ply >= 2 {
             static_eval > self.stack[ply - 2].static_eval
@@ -85,25 +107,25 @@ impl<'a> SearchWorker<'a> {
             true
         };
 
+
         // Iterate over each move
+        let mut search_state : SearchState = SearchState::default();
         while let Some(mv) = picker.next_move(self) {
             if !self.make_move(mv, ply) {
                 continue;
             }
 
-            legal_moves_played += 1;
+            search_state.legal_moves_played += 1;
             let is_quiet = mv.captured().is_none() && !mv.is_promotion();
             let gives_check = self.state.is_in_check(self.state.board.side_to_move);
 
-            if !is_pv_node && !in_check && is_quiet && !gives_check && best_move.is_some() {
-                if self.should_prune_quiet_move(depth, mv, ply, quiet_moves_count) {
+            if is_quiet {
+                if !gives_check && search_state.best_move.is_some() && self.should_prune_quiet_move(depth, mv, ply, &search_state) {
+                    self.undo_move(mv);
                     continue;
                 }
-            }
-
-            // Only increment if it's a quiet move that survived pruning
-            if is_quiet {
-                quiet_moves_count += 1;
+                // Only increment if it's a quiet move that survived pruning
+                search_state.quiet_moves_count += 1;
             }
 
             // Apply late move reduction
@@ -112,7 +134,7 @@ impl<'a> SearchWorker<'a> {
                 ply,
                 alpha,
                 beta,
-                legal_moves_played,
+                search_state.legal_moves_played,
                 is_quiet,
                 gives_check,
             );
@@ -123,9 +145,9 @@ impl<'a> SearchWorker<'a> {
                 return 0;
             }
 
-            if eval > max_eval {
-                max_eval = eval;
-                best_move = Some(mv);
+            if eval > search_state.max_eval {
+                search_state.max_eval = eval;
+                search_state.best_move = Some(mv);
             }
             alpha = alpha.max(eval);
 
@@ -138,34 +160,34 @@ impl<'a> SearchWorker<'a> {
                         mv,
                         self.state.board.side_to_move as usize,
                         &self.stack,
-                        failed_quiet_moves.as_mut_slice()
+                        search_state.failed_quiets.as_mut_slice()
                     );
                 }
                 else if mv.captured().is_some() {
-                    self.history.update_capture_move_history(mv, depth, failed_capture_moves.as_mut_slice());
+                    self.history.update_capture_move_history(mv, depth, search_state.failed_captures.as_mut_slice());
                 }
                 break;
             }
             else {
                 if is_quiet{
-                    failed_quiet_moves.push(mv);
+                    search_state.failed_quiets.push(mv);
                 }
                 else{
-                    failed_capture_moves.push(mv);
+                    search_state.failed_captures.push(mv);
                 }
             }
         }
 
         // Stalemate / Check
-        if legal_moves_played == 0 {
+        if search_state.legal_moves_played == 0 {
             return if in_check { -MATE_SCORE + ply as i32 } else { 0 };
         }
 
-        if let Some(mv) = best_move {
-            self.tt_store(orig_alpha, beta, depth as u32, ply, mv, max_eval);
+        if let Some(mv) = search_state.best_move {
+            self.tt_store(orig_alpha, beta, depth as u32, ply, mv, search_state.max_eval);
         }
 
-        max_eval
+        search_state.max_eval
     }
 
     /// Tactical Quiescence Search

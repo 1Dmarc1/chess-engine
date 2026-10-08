@@ -2,6 +2,7 @@ use crate::board::transposition_table::{EntryFlag, TTRead};
 use crate::globals::MIN_MATE_SCORE;
 use crate::search::lmr::get_lmr;
 use crate::search::search_worker::core::SearchWorker;
+use crate::search::search_worker::search::SearchState;
 use crate::types::piece::PieceColor;
 use crate::types::{Move, piece};
 
@@ -57,8 +58,12 @@ impl SearchWorker<'_> {
     }
 
     #[inline]
-    pub(crate) fn should_prune_quiet_move(&mut self, depth : i32, mv : Move, ply : usize, quiet_moves_count : i32) -> bool{
+    pub(crate) fn should_prune_quiet_move(&mut self, depth : i32, mv : Move, ply : usize, search_state: &SearchState) -> bool{
         let mut res = false;
+        let stack_entry = self.stack[ply];
+        if stack_entry.is_pv_node || stack_entry.in_check{
+            return false;
+        }
 
         // History pruning
         if depth <= HIST_PRUNE_MAX_DEPTH {
@@ -73,12 +78,9 @@ impl SearchWorker<'_> {
             let lmp_threshold = 3 + 2 * depth * depth;
             let limit = if self.stack[ply].improving { lmp_threshold } else { lmp_threshold / 2 }.max(4);
 
-            if quiet_moves_count >= limit {
+            if search_state.quiet_moves_count >= limit as usize {
                 res = true;
             }
-        }
-        if res{
-            self.undo_move(mv);
         }
         res
     }

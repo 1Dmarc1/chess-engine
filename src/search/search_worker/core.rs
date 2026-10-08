@@ -8,13 +8,7 @@ use crate::search::history_table::HistoryTable;
 use crate::search::search_worker::nnue_diff::NNUEDiff;
 use crate::types::Move;
 
-pub struct MoveContext {
-    pub mv: Move,
-    pub move_number: usize,
-    pub is_quiet: bool,
-    pub gives_check: bool,
-    pub extension: i32,
-}
+
 
 #[derive(Clone, Copy, Default)]
 pub struct StackEntry {
