@@ -32,13 +32,8 @@ pub mod piece {
 
     /// Returns the color of a piece
     #[inline(always)]
-    pub fn color_of(piece : usize) -> PieceColor {
-        if piece <= 5 {
-            PieceColor::White
-        }
-        else{
-            PieceColor::Black
-        }
+    pub fn color_of(piece: usize) -> PieceColor {
+        if piece <= 5 { PieceColor::White } else { PieceColor::Black }
     }
 
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -50,11 +45,7 @@ pub mod piece {
     impl Not for PieceColor {
         type Output = PieceColor;
         fn not(self) -> Self::Output {
-            if self == PieceColor::Black {
-                PieceColor::White
-            } else {
-                PieceColor::Black
-            }
+            if self == PieceColor::Black { PieceColor::White } else { PieceColor::Black }
         }
     }
 }
@@ -66,13 +57,7 @@ pub struct Move(u32);
 impl Move {
     const NO_CAPTURE: u8 = 15;
     #[inline]
-    pub fn new(
-        from: u8,
-        to: u8,
-        piece_type: usize,
-        captured: Option<usize>,
-        move_type: MoveType,
-    ) -> Move {
+    pub fn new(from: u8, to: u8, piece_type: usize, captured: Option<usize>, move_type: MoveType) -> Move {
         let mut data = 0u32;
         data |= (from as u32) & 0x3F; // Bits 0-5 (6)
         data |= ((to as u32) & 0x3F) << 6; // Bits 6 - 11 (6)
@@ -124,11 +109,7 @@ impl Move {
     #[inline]
     pub const fn captured(&self) -> Option<usize> {
         let cap = ((self.0 >> 16) & 0xF) as u8;
-        if cap == Self::NO_CAPTURE {
-            None
-        } else {
-            Some(cap as usize)
-        }
+        if cap == Self::NO_CAPTURE { None } else { Some(cap as usize) }
     }
 
     #[inline(always)]
@@ -153,7 +134,7 @@ impl Move {
     }
 
     #[inline(always)]
-    pub const fn is_quiet(&self) -> bool{
+    pub const fn is_quiet(&self) -> bool {
         self.captured().is_none() && !self.is_promotion()
     }
 
@@ -164,10 +145,7 @@ impl Move {
 
     #[inline]
     pub const fn is_castle(&self) -> bool {
-        matches!(
-            self.move_type(),
-            MoveType::KingCastle | MoveType::QueenCastle
-        )
+        matches!(self.move_type(), MoveType::KingCastle | MoveType::QueenCastle)
     }
 
     #[inline]
@@ -209,14 +187,12 @@ impl Move {
     /// Returns true if this move is pseudo legal.
     #[inline]
     pub fn is_pseudo_legal(&self, state: &GameState) -> bool {
-
         let to = self.to();
         let from = self.from();
         let move_type = self.move_type();
 
         let to_bb = Bitboard(1u64 << to);
         let from_bb = Bitboard(1u64 << from);
-
 
         if (state.friendly_pieces() & from_bb).is_empty() {
             return false;
@@ -238,9 +214,7 @@ impl Move {
         }
 
         match self.piece_type() {
-            piece::W_KNIGHT | piece::B_KNIGHT => {
-                !(attacks::KNIGHT_ATTACKS[from as usize] & to_bb).is_empty()
-            },
+            piece::W_KNIGHT | piece::B_KNIGHT => !(attacks::KNIGHT_ATTACKS[from as usize] & to_bb).is_empty(),
             piece::W_KING | piece::B_KING => {
                 if move_type == MoveType::KingCastle || move_type == MoveType::QueenCastle {
                     return false; // TODO: Implement Castle Checks
@@ -256,8 +230,7 @@ impl Move {
                 !(attacks & to_bb).is_empty()
             }
             piece::W_QUEEN | piece::B_QUEEN => {
-                let attacks = bishop_move_gen::get_bishop_attacks(from, state.all_pieces())
-                    | rook_move_gen::get_rook_attacks(from, state.all_pieces());
+                let attacks = bishop_move_gen::get_bishop_attacks(from, state.all_pieces()) | rook_move_gen::get_rook_attacks(from, state.all_pieces());
                 !(attacks & to_bb).is_empty()
             }
             piece::W_PAWN | piece::B_PAWN => {
@@ -273,9 +246,7 @@ impl Move {
                 // Double push
                 if move_type == MoveType::DoublePawnPush {
                     let intermediate_sq = (from as isize + direction * 8) as u8;
-                    return diff == direction * 16
-                        && state.board.get_piece_at_square(to).is_none()
-                        && state.board.get_piece_at_square(intermediate_sq).is_none();
+                    return diff == direction * 16 && state.board.get_piece_at_square(to).is_none() && state.board.get_piece_at_square(intermediate_sq).is_none();
                 }
 
                 // Diagonal captures & En Passant
@@ -286,7 +257,8 @@ impl Move {
                     return state.board.get_piece_at_square(to).is_some();
                 }
 
-                false            }
+                false
+            }
             _ => unreachable!(),
         }
     }

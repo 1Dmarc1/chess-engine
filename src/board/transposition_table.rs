@@ -212,14 +212,6 @@ impl TTEntry {
         self.data.store(data, Relaxed);
         self.key.store(key ^ data, Relaxed); // XOR the entry with the stored data. When retrieving the entry this is used to verify that data and key match.
     }
-
-    pub(crate) fn store_entry(&self, entry: &Self) {
-        let raw_data = entry.data.load(Relaxed);
-        let raw_key = entry.key.load(Relaxed);
-
-        self.data.store(raw_data, Relaxed);
-        self.key.store(raw_key, Relaxed);
-    }
 }
 
 /// How a stored score relates to the true value of the position

@@ -6,6 +6,8 @@ use crate::search::move_picker::MovePicker;
 use crate::search::search_worker::core::SearchWorker;
 use crate::types::Move;
 
+const SEE_MARGIN: i32 = 200;
+
 pub struct SearchState {
     pub max_eval: i32,
     pub best_move: Option<Move>,
@@ -43,6 +45,7 @@ impl Default for SearchState {
         }
     }
 }
+
 
 impl<'a> SearchWorker<'a> {
 
@@ -95,7 +98,6 @@ impl<'a> SearchWorker<'a> {
         while let Some(mv) = picker.next_move(self) {
             if !in_check {
                 // Static exchange evaluation
-                const SEE_MARGIN: i32 = 200;
                 let threshold = (alpha - static_eval - SEE_MARGIN).max(0);
                 if !mv.is_promotion() && !self.state.is_move_greater_equal(mv, threshold) {
                     continue;
@@ -128,7 +130,7 @@ impl<'a> SearchWorker<'a> {
         best_value
     }
 
-    pub fn search_root(
+    pub(crate) fn search_root(
         &mut self,
         depth: i32,
         previous_best_move: Option<Move>,
@@ -139,8 +141,6 @@ impl<'a> SearchWorker<'a> {
         let mut picker = MovePicker::new(previous_best_move, None, None, 0);
         let mut max_eval = -INFINITY;
         let mut best_move = None;
-
-        // Capture the original alpha to determine correct TT flags later
         let orig_alpha = alpha;
 
         while let Some(mv) = picker.next_move(self) {
@@ -176,22 +176,7 @@ impl<'a> SearchWorker<'a> {
         }
 
         if let Some(mv) = best_move {
-            let flag = if max_eval >= beta {
-                EntryFlag::LowerBound // We failed high
-            } else if max_eval <= orig_alpha {
-                EntryFlag::UpperBound // We failed low
-            } else {
-                EntryFlag::Exact      // We stayed inside the window
-            };
-
-            self.table.store(
-                self.state.hash,
-                depth as u32,
-                max_eval,
-                flag,
-                mv,
-                0
-            );
+            self.tt_store(orig_alpha, beta, depth as u32, 0, mv, max_eval);
             Some((mv, max_eval))
         } else {
             None

@@ -1,16 +1,24 @@
 use crate::globals;
-use crate::globals::MATE_SCORE;
+use crate::globals::{MATE_SCORE, MIN_MATE_SCORE};
+use crate::search::lmr::get_lmr;
 use crate::search::move_picker::MovePicker;
 use crate::search::search_worker::core::SearchWorker;
 use crate::search::search_worker::search::{MoveContext, SearchState};
-use crate::types::Move;
+use crate::types::piece::PieceColor;
+use crate::types::{Move, piece};
+
+const LMR_MIN_MOVES: usize = 3;
+const LMR_MIN_DEPTH: i32 = 2;
+const HIST_PRUNE_MARGIN: i32 = 1500;
+const HIST_PRUNE_MAX_DEPTH: i32 = 2;
+const RFP_MAX_DEPTH: i32 = 8;
+const RFP_MARGIN_MULTIPLIER: i32 = 150;
+const NMP_MIN_DEPTH: i32 = 2;
+const NMP_REDUCTION: i32 = 4;
 
 impl SearchWorker<'_> {
     pub(crate) fn negamax(&mut self, mut depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
-        if self.is_time_up()
-            || ply > 0 && self.state.is_repetition()
-            || self.state.halfmove_clock >= 100
-        {
+        if self.is_time_up() || ply > 0 && self.state.is_repetition() || self.state.halfmove_clock >= 100 {
             return 0;
         }
 
@@ -58,12 +66,7 @@ impl SearchWorker<'_> {
         }
 
         // Setup Move Loop
-        let mut picker = MovePicker::new(
-            tt_move,
-            self.stack[ply].killers[0],
-            self.stack[ply].killers[1],
-            ply,
-        );
+        let mut picker = MovePicker::new(tt_move, self.stack[ply].killers[0], self.stack[ply].killers[1], ply);
 
         self.stack[ply].improving = if !in_check && ply >= 2 {
             static_eval > self.stack[ply - 2].static_eval
@@ -83,10 +86,7 @@ impl SearchWorker<'_> {
             let move_context = MoveContext::new(mv, gives_check);
 
             if mv.is_quiet() {
-                if !gives_check
-                    && search_state.best_move.is_some()
-                    && self.should_prune_quiet_move(depth, mv, ply, &search_state)
-                {
+                if !gives_check && search_state.best_move.is_some() && self.should_prune_quiet_move(depth, mv, ply, &search_state) {
                     self.undo_move(mv);
                     continue;
                 }
@@ -95,14 +95,7 @@ impl SearchWorker<'_> {
             }
 
             // Apply late move reduction
-            let eval = self.search_single_move(
-                depth,
-                ply,
-                alpha,
-                beta,
-                search_state.legal_moves_played,
-                &move_context,
-            );
+            let eval = self.search_single_move(depth, ply, alpha, beta, search_state.legal_moves_played, &move_context);
 
             self.undo_move(mv);
 
@@ -130,22 +123,11 @@ impl SearchWorker<'_> {
 
         // Stalemate / Check
         if search_state.legal_moves_played == 0 {
-            return if in_check {
-                -MATE_SCORE + ply as i32
-            } else {
-                0
-            };
+            return if in_check { -MATE_SCORE + ply as i32 } else { 0 };
         }
 
         if let Some(mv) = search_state.best_move {
-            self.tt_store(
-                orig_alpha,
-                beta,
-                depth as u32,
-                ply,
-                mv,
-                search_state.max_eval,
-            );
+            self.tt_store(orig_alpha, beta, depth as u32, ply, mv, search_state.max_eval);
         }
 
         search_state.max_eval
@@ -164,11 +146,103 @@ impl SearchWorker<'_> {
                 state.failed_quiets.as_mut_slice(),
             );
         } else if mv.captured().is_some() {
-            self.history.update_capture_move_history(
-                mv,
-                depth,
-                state.failed_captures.as_mut_slice(),
-            );
+            self.history.update_capture_move_history(mv, depth, state.failed_captures.as_mut_slice());
         }
+    }
+
+    /// Searches a single move and returns its score.
+    #[inline]
+    fn search_single_move(&mut self, depth: i32, ply: usize, alpha: i32, beta: i32, moves_played: usize, mv_ctx: &MoveContext) -> i32 {
+        let mut eval;
+        let in_check = self.stack[ply].in_check;
+
+        // Apply LMR
+        if moves_played >= LMR_MIN_MOVES && !in_check && depth >= LMR_MIN_DEPTH && mv_ctx.mv.is_quiet() && !mv_ctx.gives_check {
+            let reduction = get_lmr(depth, moves_played);
+
+            // Zero-window reduced search
+            eval = -self.negamax(depth - 1 - reduction, ply + 1, -alpha - 1, -alpha);
+
+            // Re-search at full depth if it beats alpha
+            if eval > alpha {
+                eval = -self.negamax(depth - 1, ply + 1, -beta, -alpha);
+            }
+        } else {
+            // Full depth search
+            eval = -self.negamax(depth - 1, ply + 1, -beta, -alpha);
+        }
+
+        eval
+    }
+
+    #[inline]
+    pub(crate) fn should_prune_quiet_move(&mut self, depth: i32, mv: Move, ply: usize, search_state: &SearchState) -> bool {
+        let mut res = false;
+        let stack_entry = self.stack[ply];
+        if stack_entry.is_pv_node || stack_entry.in_check {
+            return false;
+        }
+
+        // History pruning
+        if depth <= HIST_PRUNE_MAX_DEPTH {
+            let hist_score = self.history.score_quiet_move(mv, ply, &self.stack);
+            if hist_score < -HIST_PRUNE_MARGIN * depth {
+                res = true;
+            }
+        }
+
+        // Late move pruning
+        if !res && depth <= 4 {
+            let lmp_threshold = 3 + 2 * depth * depth;
+            let limit = if self.stack[ply].improving { lmp_threshold } else { lmp_threshold / 2 }.max(4);
+
+            if search_state.quiet_moves_count >= limit as usize {
+                res = true;
+            }
+        }
+        res
+    }
+
+    #[inline]
+    pub(crate) fn try_pre_move_pruning(&mut self, depth: i32, ply: usize, beta: i32) -> Option<i32> {
+        let static_eval = self.stack[ply].static_eval;
+        let in_check = self.stack[ply].in_check;
+
+        // Reverse Futility Pruning
+        if !self.stack[ply].is_pv_node && depth <= RFP_MAX_DEPTH && !in_check
+            && beta > -MIN_MATE_SCORE      // never prune when the window is in mate range
+            && static_eval.abs() < MIN_MATE_SCORE
+        {
+            let margin = RFP_MARGIN_MULTIPLIER * depth;
+            if static_eval >= beta + margin {
+                return Some(static_eval);
+            }
+        }
+
+        // Null Move Pruning
+        if depth >= NMP_MIN_DEPTH && !in_check && ply > 0 {
+            let us = self.state.board.side_to_move;
+            let pawns = if us == PieceColor::White {
+                self.state.board.pieces[piece::W_PAWN]
+            } else {
+                self.state.board.pieces[piece::B_PAWN]
+            };
+            let kings = if us == PieceColor::White {
+                self.state.board.pieces[piece::W_KING]
+            } else {
+                self.state.board.pieces[piece::B_KING]
+            };
+
+            if (self.state.friendly_pieces().0 ^ pawns.0 ^ kings.0) != 0 {
+                self.make_null_move(ply);
+                let null_eval = -self.negamax(depth - 1 - NMP_REDUCTION, ply + 1, -beta, -beta + 1);
+                self.undo_null_move();
+
+                if null_eval >= beta {
+                    return Some(beta);
+                }
+            }
+        }
+        None
     }
 }

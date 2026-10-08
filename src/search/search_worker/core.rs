@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use nnue_rs::{Accumulator, Board, Network};
 use crate::board::game_state::GameState;
-use crate::board::transposition_table::TranspositionTable;
+use crate::board::transposition_table::{EntryFlag, TTRead, TranspositionTable};
 use crate::globals;
 use crate::search::history_table::HistoryTable;
 use crate::search::search_worker::nnue_diff::NNUEDiff;
@@ -111,6 +111,36 @@ impl<'a> SearchWorker<'a> {
     }
 
     #[inline]
+    pub fn update_killers(&mut self, ply: usize, mv: Move) {
+        if self.stack[ply].killers[0] != Some(mv) {
+            self.stack[ply].killers[1] = self.stack[ply].killers[0];
+            self.stack[ply].killers[0] = Some(mv);
+        }
+    }
+
+    #[inline]
+    pub(crate) fn tt_store(&mut self, orig_alpha: i32, beta: i32, depth: u32, ply: usize, mv: Move, score: i32) {
+        let flag = if score >= beta {
+            EntryFlag::LowerBound
+        } else if score <= orig_alpha {
+            EntryFlag::UpperBound
+        } else {
+            EntryFlag::Exact
+        };
+
+        let hash = self.state.hash;
+        self.table.store(hash, depth, score, flag, mv, ply)
+    }
+
+    #[inline]
+    pub(crate) fn tt_probe(&self) -> Option<TTRead> {
+        if let Some(entry) = self.table.probe(self.state.hash) {
+            return Some(entry);
+        }
+        None
+    }
+    
+    #[inline]
     fn update_accumulator(&mut self, ply: usize) {
         if ply == 0 {
             return;
@@ -144,4 +174,6 @@ impl<'a> SearchWorker<'a> {
         }
         self.stack[acc_idx].acc_clean = true;
     }
+    
+    
 }
