@@ -5,6 +5,15 @@ use crate::search::search_worker::core::SearchWorker;
 use crate::types::piece::PieceColor;
 use crate::types::{Move, piece};
 
+const RFP_MAX_DEPTH: i32 = 8;
+const RFP_MARGIN_MULTIPLIER: i32 = 150;
+
+const NMP_MIN_DEPTH: i32 = 2;
+const NMP_REDUCTION: i32 = 4;
+
+const LMR_MIN_MOVES: usize = 3;
+const LMR_MIN_DEPTH: i32 = 2;
+
 impl SearchWorker<'_> {
 
     #[inline]
@@ -56,17 +65,17 @@ impl SearchWorker<'_> {
         is_pv : bool,
     ) -> Option<i32> {
         // Reverse Futility Pruning
-        if !is_pv && depth <= 8 && !in_check
+        if !is_pv && depth <= RFP_MAX_DEPTH && !in_check
             && beta > -MIN_MATE_SCORE      // never prune when the window is in mate range
             && static_eval.abs() < MIN_MATE_SCORE {
-            let margin = 150 * depth;
+            let margin = RFP_MARGIN_MULTIPLIER * depth;
             if static_eval >= beta + margin {
                 return Some(static_eval);
             }
         }
 
         // Null Move Pruning
-        if depth >= 2 && !in_check && ply > 0 {
+        if depth >= NMP_MIN_DEPTH && !in_check && ply > 0 {
             let us = self.state.board.side_to_move;
             let pawns = if us == PieceColor::White {
                 self.state.board.pieces[piece::W_PAWN]
@@ -81,7 +90,7 @@ impl SearchWorker<'_> {
 
             if (self.state.friendly_pieces().0 ^ pawns.0 ^ kings.0) != 0 {
                 self.make_null_move(ply);
-                let null_eval = -self.negamax(depth - 1 - 4, ply + 1, -beta, -beta + 1);
+                let null_eval = -self.negamax(depth - 1 - NMP_REDUCTION, ply + 1, -beta, -beta + 1);
                 self.undo_null_move();
 
                 if null_eval >= beta {
@@ -108,7 +117,7 @@ impl SearchWorker<'_> {
         let mut eval;
 
         // Apply LMR
-        if moves_played >= 3 && !in_check && depth >= 2 && is_quiet && !gives_check {
+        if moves_played >= LMR_MIN_MOVES && !in_check && depth >= LMR_MIN_DEPTH && is_quiet && !gives_check {
             let reduction = get_lmr(depth, moves_played);
 
             // Zero-window reduced search
