@@ -6,6 +6,9 @@ use crate::search::move_picker::MovePicker;
 use crate::search::search_worker::core::SearchWorker;
 use crate::types::Move;
 
+const HIST_PRUNE_MARGIN: i32 = 1500;
+const HIST_PRUNE_MAX_DEPTH: i32 = 2;
+
 impl<'a> SearchWorker<'a> {
     pub(crate) fn negamax(&mut self, depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
         if self.is_time_up() {
@@ -78,14 +81,27 @@ impl<'a> SearchWorker<'a> {
             let is_quiet = mv.captured().is_none() && !mv.is_promotion();
             let gives_check = self.state.is_in_check(self.state.board.side_to_move);
 
-            if !is_pv_node && !in_check && is_quiet && !gives_check && depth <= 4 {
-                let lmp_threshold = 3 + 2 * depth * depth;
-                let limit = if improving { lmp_threshold } else { lmp_threshold / 2 }.max(4);
-
-                if quiet_moves_count >= limit {
-                    self.undo_move(mv);
-                    continue; // Skip searching this late, low-probability quiet move entirely!
+            if !is_pv_node && !in_check && is_quiet && !gives_check && best_move.is_some() {
+                // History pruning
+                if depth <= HIST_PRUNE_MAX_DEPTH {
+                    let hist_score = self.history.score_quiet_move(mv, ply, &self.stack);
+                    if hist_score < -HIST_PRUNE_MARGIN * depth {
+                        self.undo_move(mv);
+                        continue;
+                    }
                 }
+
+                // Late move pruning
+                if depth <= 4{
+                    let lmp_threshold = 3 + 2 * depth * depth;
+                    let limit = if improving { lmp_threshold } else { lmp_threshold / 2 }.max(4);
+
+                    if quiet_moves_count >= limit {
+                        self.undo_move(mv);
+                        continue; // Skip searching this late, low-probability quiet move entirely!
+                    }
+                }
+
             }
 
             // Only increment if it's a quiet move that survived pruning
