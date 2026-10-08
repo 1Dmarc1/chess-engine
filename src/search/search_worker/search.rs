@@ -10,7 +10,7 @@ const HIST_PRUNE_MARGIN: i32 = 1500;
 const HIST_PRUNE_MAX_DEPTH: i32 = 2;
 
 impl<'a> SearchWorker<'a> {
-    pub(crate) fn negamax(&mut self, depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
+    pub(crate) fn negamax(&mut self, mut depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
         if self.is_time_up() {
             return 0;
         }
@@ -23,11 +23,17 @@ impl<'a> SearchWorker<'a> {
             return 0;
         }
 
+        // Check extension
+        let in_check = self.state.is_in_check(self.state.board.side_to_move);
+        if in_check{
+            depth += 1;
+        }
+
         if depth <= 0 {
             return self.quiescence(alpha, beta, ply);
         }
 
-        let in_check = self.state.is_in_check(self.state.board.side_to_move);
+
         let is_pv_node = beta - alpha > 1;
         self.nodes += 1;
         let orig_alpha = alpha;
@@ -41,6 +47,11 @@ impl<'a> SearchWorker<'a> {
                 return score;
             }
             tt_move = Some(entry.best_move());
+        }
+
+        // Reduce depth if no tt_move was found
+        if depth >= 4 && tt_move.is_none() {
+            depth -= 1;
         }
 
         // Pre move pruning
