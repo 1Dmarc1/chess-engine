@@ -231,7 +231,7 @@ impl MovePicker {
 
         for i in self.index..self.moves.len {
             let mv = self.moves.moves[i];
-            self.scores[i] = worker.history.score_quiet_move(mv, side_idx, self.ply, &worker.stack);
+            self.scores[i] = worker.history.score_quiet_move(mv, self.ply, &worker.stack);
         }
     }
 

@@ -61,9 +61,7 @@ impl<'a> SearchWorker<'a> {
 
         let mut failed_quiet_moves: MoveList = MoveList::default();
         let mut failed_capture_moves: MoveList = MoveList::default();
-
-        let static_eval = self.evaluate(ply);
-        self.stack[ply].eval = static_eval;
+        
         let improving = if !in_check && ply >= 2 {
             static_eval > self.stack[ply - 2].eval
         } else {
@@ -132,7 +130,7 @@ impl<'a> SearchWorker<'a> {
                     );
                 }
                 else if mv.captured().is_some() {
-                    self.history.update_capture_move_history(mv, depth, failed_quiet_moves.as_mut_slice());
+                    self.history.update_capture_move_history(mv, depth, failed_capture_moves.as_mut_slice());
                 }
                 break;
             }

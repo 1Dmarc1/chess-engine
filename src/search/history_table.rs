@@ -1,7 +1,7 @@
 use std::alloc::{alloc_zeroed, Layout};
 use crate::search::evaluation;
 use crate::search::search_worker::core::StackEntry;
-use crate::types::Move;
+use crate::types::{piece, Move};
 
 /// Stores a score for every pair of (previous_piece, previous_to_square) and (current_piece, current_to_square).
 pub type ContinuationTable = [[[[i16; 64]; 12]; 64]; 12];
@@ -38,10 +38,11 @@ impl HistoryTable {
 
     /// Returns a score for a quiet move depending on the scores stored in the history table.
     #[inline]
-    pub fn score_quiet_move(&self, mv: Move, side: usize, ply : usize, stack: &[StackEntry]) -> i32{
+    pub fn score_quiet_move(&self, mv: Move, ply : usize, stack: &[StackEntry]) -> i32{
         let from = mv.from() as usize;
         let to = mv.to() as usize;
-        let curr_piece = mv.piece_type();
+        let curr_piece = mv.landed_piece();
+        let side = piece::color_of(curr_piece) as usize;
 
 
         let mut score = self.main[side][from][to] as i32;
@@ -56,7 +57,7 @@ impl HistoryTable {
         }
 
         if ply >= 2 {
-            if let Some(prev2_mv) = stack[ply - 1].current_move {
+            if let Some(prev2_mv) = stack[ply].current_move {
                 let prev2_piece = prev2_mv.landed_piece();
                 let prev2_to = prev2_mv.to() as usize;
 
@@ -75,11 +76,11 @@ impl HistoryTable {
         }
 
         let mvv_lva_score = evaluation::mvv_lva(mv);
-        self.captures[mv.landed_piece()][mv.to() as usize][mv.captured().unwrap()] as i32 + mvv_lva_score
+        (self.captures[mv.landed_piece()][mv.to() as usize][mv.captured().unwrap()] as i32 / 8) + (mvv_lva_score * 16)
     }
 
     pub(crate) fn update_capture_move_history(&mut self, mv : Move, depth : i32, failed_captures : &[Move]) {
-        let bonus = ((depth * depth) as i16).min(400);
+        let bonus = (16 * depth * depth).min(1600) as i16;
 
         let attacker = mv.landed_piece();
         let to = mv.to() as usize;
@@ -97,7 +98,7 @@ impl HistoryTable {
     }
 
     pub(crate) fn update_quiet_move_history(&mut self, depth : i32, ply : usize, cutoff_mv : Move, color_idx: usize, stack: &[StackEntry], failed_quiet_moves: &[Move]) {
-        let bonus = ((depth * depth) as i16).min(400);
+        let bonus = (16 * depth * depth).min(1600) as i16;
 
         let from = cutoff_mv.from() as usize;
         let to = cutoff_mv.to() as usize;
@@ -115,7 +116,7 @@ impl HistoryTable {
 
         // Update 1-ply history
         if ply >= 1{
-            if let Some(p1_mv) = stack[ply - 1].current_move {
+            if let Some(p1_mv) = stack[ply].current_move {
                 let p1_piece = p1_mv.landed_piece();
                 let p1_to = p1_mv.to() as usize;
 
@@ -133,7 +134,7 @@ impl HistoryTable {
 
         // Update 2-ply history
         if ply >= 2 {
-            if let Some(p2_mv) = stack[ply - 2].current_move {
+            if let Some(p2_mv) = stack[ply - 1].current_move {
                 let p2_piece = p2_mv.landed_piece();
                 let p2_to = p2_mv.to() as usize;
 

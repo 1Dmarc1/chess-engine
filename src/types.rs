@@ -30,6 +30,17 @@ pub mod piece {
 
     pub const BLACK_PIECES: [usize; 6] = [B_PAWN, B_KNIGHT, B_BISHOP, B_ROOK, B_QUEEN, B_KING];
 
+    /// Returns the color of a piece
+    #[inline(always)]
+    pub fn color_of(piece : usize) -> PieceColor {
+        if piece <= 5 {
+            PieceColor::White
+        }
+        else{
+            PieceColor::Black
+        }
+    }
+
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     pub enum PieceColor {
         White,
