@@ -57,7 +57,7 @@ impl HistoryTable {
         }
 
         if ply >= 2 {
-            if let Some(prev2_mv) = stack[ply].current_move {
+            if let Some(prev2_mv) = stack[ply - 1].current_move {
                 let prev2_piece = prev2_mv.landed_piece();
                 let prev2_to = prev2_mv.to() as usize;
 
