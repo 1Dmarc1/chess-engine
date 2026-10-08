@@ -17,7 +17,7 @@ pub struct EngineOptions {
 impl Default for EngineOptions {
     fn default() -> Self {
         Self {
-            threads: 4,
+            threads: 1,
             hash_table_size_mb: 64,
         }
     }

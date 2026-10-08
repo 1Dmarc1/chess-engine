@@ -1,4 +1,3 @@
-use crate::board::transposition_table::EntryFlag;
 use crate::globals;
 use crate::globals::{INFINITY, MATE_SCORE};
 use crate::move_gen::MoveList;

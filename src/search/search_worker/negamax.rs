@@ -77,6 +77,17 @@ impl SearchWorker<'_> {
         // Iterate over each move
         let mut search_state: SearchState = SearchState::default();
         while let Some(mv) = picker.next_move(self) {
+
+            // SEE pruning
+            if depth <= 4 && search_state.best_move.is_some() && !self.stack[ply].in_check {
+                // Require losing more material at deeper depths before pruning
+                let see_margin = if mv.is_quiet() { -50 * depth } else { -100 * depth };
+
+                if !self.state.is_move_greater_equal(mv, see_margin) {
+                    //continue;
+                }
+            }
+
             if !self.make_move(mv, ply) {
                 continue;
             }
@@ -85,12 +96,11 @@ impl SearchWorker<'_> {
             let gives_check = self.state.is_in_check(self.state.board.side_to_move);
             let move_context = MoveContext::new(mv, gives_check);
 
+            if search_state.best_move.is_some() && self.should_prune_move(depth, mv, ply, &search_state, &move_context) {
+                self.undo_move(mv);
+                continue;
+            }
             if mv.is_quiet() {
-                if !gives_check && search_state.best_move.is_some() && self.should_prune_quiet_move(depth, mv, ply, &search_state) {
-                    self.undo_move(mv);
-                    continue;
-                }
-                // Only increment if it's a quiet move that survived pruning
                 search_state.quiet_moves_count += 1;
             }
 
@@ -176,28 +186,31 @@ impl SearchWorker<'_> {
     }
 
     #[inline]
-    pub(crate) fn should_prune_quiet_move(&mut self, depth: i32, mv: Move, ply: usize, search_state: &SearchState) -> bool {
+    pub(crate) fn should_prune_move(&mut self, depth: i32, mv: Move, ply: usize, search_state: &SearchState, context: &MoveContext) -> bool {
         let mut res = false;
         let stack_entry = self.stack[ply];
-        if stack_entry.is_pv_node || stack_entry.in_check {
+        if stack_entry.is_pv_node || stack_entry.in_check || context.gives_check {
             return false;
         }
+        let is_quiet = mv.is_quiet();
 
-        // History pruning
-        if depth <= HIST_PRUNE_MAX_DEPTH {
-            let hist_score = self.history.score_quiet_move(mv, ply, &self.stack);
-            if hist_score < -HIST_PRUNE_MARGIN * depth {
-                res = true;
+        if is_quiet {
+            // History pruning
+            if depth <= HIST_PRUNE_MAX_DEPTH {
+                let hist_score = self.history.score_quiet_move(mv, ply, &self.stack);
+                if hist_score < -HIST_PRUNE_MARGIN * depth {
+                    res = true;
+                }
             }
-        }
 
-        // Late move pruning
-        if !res && depth <= 4 {
-            let lmp_threshold = 3 + 2 * depth * depth;
-            let limit = if self.stack[ply].improving { lmp_threshold } else { lmp_threshold / 2 }.max(4);
+            // Late move pruning
+            if !res && depth <= 4 {
+                let lmp_threshold = 3 + 2 * depth * depth;
+                let limit = if self.stack[ply].improving { lmp_threshold } else { lmp_threshold / 2 }.max(4);
 
-            if search_state.quiet_moves_count >= limit as usize {
-                res = true;
+                if search_state.quiet_moves_count >= limit as usize {
+                    res = true;
+                }
             }
         }
         res
