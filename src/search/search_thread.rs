@@ -6,6 +6,7 @@ use crate::board::transposition_table;
 use crate::board::transposition_table::TranspositionTable;
 use crate::globals::{INFINITY, NNUE_NETWORK};
 use crate::search::history_table::HistoryTable;
+use crate::search::search_params::SearchParams;
 use crate::search::search_worker::core::SearchWorker;
 use crate::types::Move;
 
@@ -15,11 +16,12 @@ pub struct SearchThread {
 
     tt : Arc<TranspositionTable>,
     stop : Arc<AtomicBool>,
+    search_par: SearchParams,
 }
 
 impl SearchThread {
-    pub fn new(thread_id: u8, tt : Arc<TranspositionTable>, stop : Arc<AtomicBool>) -> Self {
-        Self { quiet_move_history: HistoryTable::new(), thread_id, tt, stop }
+    pub fn new(thread_id: u8, tt : Arc<TranspositionTable>, stop : Arc<AtomicBool>, search_par : SearchParams) -> Self {
+        Self { quiet_move_history: HistoryTable::new(), thread_id, tt, stop, search_par}
     }
 
     pub fn run(&self, mut state: GameState, max_depth : i32) -> Option<Move> {
@@ -35,8 +37,8 @@ impl SearchThread {
         let network = NNUE_NETWORK.get().unwrap();
         let start_time = Instant::now();
 
-        let mut worker = SearchWorker::new(state.clone(), self.tt.clone(), network, self.stop.clone()); // Create a new search worker
-        let zobrist = &transposition_table::ZOBRIST;
+        let mut worker = SearchWorker::new(self.search_par.clone(), state.clone(), self.tt.clone(), network, self.stop.clone()); // Create a new search worker
+        let zobrist = &transposition_table::ZOBRIST; // TODO: Remove?
         worker.state.hash = zobrist.compute_hash(&worker.state);
 
         let mut best_move_overall = None;

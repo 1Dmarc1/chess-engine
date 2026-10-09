@@ -4,4 +4,4 @@ pub mod search_worker;
 mod lmr;
 pub mod history_table;
 pub mod search_thread;
-mod search_params;
+pub mod search_params;

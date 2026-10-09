@@ -5,10 +5,9 @@ use crate::board::game_state::GameState;
 use crate::board::transposition_table::{EntryFlag, TTRead, TranspositionTable};
 use crate::globals;
 use crate::search::history_table::HistoryTable;
+use crate::search::search_params::SearchParams;
 use crate::search::search_worker::nnue_diff::NNUEDiff;
 use crate::types::Move;
-
-
 
 #[derive(Clone, Copy, Default)]
 pub struct StackEntry {
@@ -26,6 +25,7 @@ pub struct StackEntry {
 }
 
 pub struct SearchWorker<'a> {
+    pub(crate) params: SearchParams,
     pub(crate) state: GameState,
     pub(crate) table: Arc<TranspositionTable>,
     pub(crate) network: &'a Network,
@@ -41,6 +41,7 @@ pub struct SearchWorker<'a> {
 
 impl<'a> SearchWorker<'a> {
     pub fn new(
+        params: SearchParams,
         state: GameState,
         table: Arc<TranspositionTable>,
         network: &'a Network,
@@ -53,6 +54,7 @@ impl<'a> SearchWorker<'a> {
         stack[0].acc_clean = true;
 
         Self {
+            params,
             state,
             table,
             network,

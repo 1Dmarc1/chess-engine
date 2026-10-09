@@ -7,15 +7,6 @@ use crate::search::search_worker::search::{MoveContext, SearchState};
 use crate::types::piece::PieceColor;
 use crate::types::{Move, piece};
 
-const LMR_MIN_MOVES: usize = 3;
-const LMR_MIN_DEPTH: i32 = 2;
-const HIST_PRUNE_MARGIN: i32 = 1500;
-const HIST_PRUNE_MAX_DEPTH: i32 = 2;
-const RFP_MAX_DEPTH: i32 = 8;
-const RFP_MARGIN_MULTIPLIER: i32 = 150;
-const NMP_MIN_DEPTH: i32 = 2;
-const NMP_REDUCTION: i32 = 4;
-
 impl SearchWorker<'_> {
     pub(crate) fn negamax(&mut self, mut depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
         if self.is_time_up() || ply > 0 && self.state.is_repetition() || self.state.halfmove_clock >= 100 {
@@ -167,7 +158,7 @@ impl SearchWorker<'_> {
         let in_check = self.stack[ply].in_check;
 
         // Apply LMR
-        if moves_played >= LMR_MIN_MOVES && !in_check && depth >= LMR_MIN_DEPTH && mv_ctx.mv.is_quiet() && !mv_ctx.gives_check {
+        if moves_played >= self.params.lmr_min_moves && !in_check && depth >= self.params.lmr_min_depth && mv_ctx.mv.is_quiet() && !mv_ctx.gives_check {
             let reduction = get_lmr(depth, moves_played);
 
             // Zero-window reduced search
@@ -196,9 +187,9 @@ impl SearchWorker<'_> {
 
         if is_quiet {
             // History pruning
-            if depth <= HIST_PRUNE_MAX_DEPTH {
+            if depth <= self.params.hist_prune_max_depth {
                 let hist_score = self.history.score_quiet_move(mv, ply, &self.stack);
-                if hist_score < -HIST_PRUNE_MARGIN * depth {
+                if hist_score < - self.params.hist_prune_margin * depth {
                     res = true;
                 }
             }
@@ -222,18 +213,18 @@ impl SearchWorker<'_> {
         let in_check = self.stack[ply].in_check;
 
         // Reverse Futility Pruning
-        if !self.stack[ply].is_pv_node && depth <= RFP_MAX_DEPTH && !in_check
+        if !self.stack[ply].is_pv_node && depth <= self.params.rfp_max_depth && !in_check
             && beta > -MIN_MATE_SCORE      // never prune when the window is in mate range
             && static_eval.abs() < MIN_MATE_SCORE
         {
-            let margin = RFP_MARGIN_MULTIPLIER * depth;
+            let margin = self.params.rfp_margin_multiplier * depth;
             if static_eval >= beta + margin {
                 return Some(static_eval);
             }
         }
 
         // Null Move Pruning
-        if depth >= NMP_MIN_DEPTH && !in_check && ply > 0 {
+        if depth >= self.params.nmp_min_depth && !in_check && ply > 0 {
             let us = self.state.board.side_to_move;
             let pawns = if us == PieceColor::White {
                 self.state.board.pieces[piece::W_PAWN]
@@ -248,7 +239,7 @@ impl SearchWorker<'_> {
 
             if (self.state.friendly_pieces().0 ^ pawns.0 ^ kings.0) != 0 {
                 self.make_null_move(ply);
-                let null_eval = -self.negamax(depth - 1 - NMP_REDUCTION, ply + 1, -beta, -beta + 1);
+                let null_eval = -self.negamax(depth - 1 - self.params.nmp_reduction, ply + 1, -beta, -beta + 1);
                 self.undo_null_move();
 
                 if null_eval >= beta {

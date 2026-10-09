@@ -7,6 +7,7 @@ use crate::types::{Move, MoveType};
 use std::str::SplitWhitespace;
 use std::time::Duration;
 use crate::move_gen::move_list::MoveList;
+use crate::search::search_params::SearchParams;
 
 /// Handles incoming uci commands. Returns true if the engine should quit.
 pub fn handle_uci_command(line: &str, engine: &mut Engine) -> bool {
@@ -18,7 +19,7 @@ pub fn handle_uci_command(line: &str, engine: &mut Engine) -> bool {
 
             println!("option name Hash type spin default 64 min 1 max 32000");
             println!("option name Threads type spin default 4 min 1 max 128");
-
+            
             println!("uciok");
         }
         Some("isready") => {

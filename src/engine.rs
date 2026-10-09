@@ -1,5 +1,6 @@
 use crate::board::game_state::GameState;
 use crate::board::transposition_table::TranspositionTable;
+use crate::search::search_params::SearchParams;
 use crate::search::search_thread::SearchThread;
 use crate::types::Move;
 use crate::{globals, move_gen};
@@ -24,6 +25,7 @@ impl Default for EngineOptions {
 }
 
 pub struct Engine {
+    search_par: SearchParams,
     pub(crate) options: EngineOptions,
     pub(crate) state: GameState,
     table: Arc<TranspositionTable>,
@@ -40,6 +42,7 @@ impl Engine {
         move_gen::setup(); // Ensure the move_gen tables are filled.
 
         Engine {
+            search_par : SearchParams::default(),
             options: EngineOptions::default(),
             state: GameState::default(),
             table: Arc::new(TranspositionTable::new(64)),
@@ -51,10 +54,6 @@ impl Engine {
 
     pub fn get_table(&self) -> Arc<TranspositionTable> {
         self.table.clone()
-    }
-
-    pub fn set_state(&mut self, state: GameState) {
-        self.state = state;
     }
 
     pub fn reset_for_new_game(&mut self) {
@@ -77,9 +76,15 @@ impl Engine {
 
         // Setup thread contexts
         let thread_count = self.options.threads;
+        self.contexts.clear();
         while self.contexts.len() < thread_count as usize {
             let id = self.contexts.len() as u8;
-            self.contexts.push(Arc::new(Mutex::new(SearchThread::new(id, self.table.clone(), self.stop_search.clone()))));
+            self.contexts.push(Arc::new(Mutex::new(SearchThread::new(
+                id,
+                self.table.clone(),
+                self.stop_search.clone(),
+                self.search_par.clone(),
+            ))));
         }
         self.contexts.truncate(thread_count as usize);
         let contexts = self.contexts.clone();
@@ -106,12 +111,7 @@ impl Engine {
 
         // Spawn the search thread
         thread::spawn(move || {
-            let best_move = Self::run_multithreaded_search(
-                state_clone,
-                max_depth,
-                thread_count,
-                contexts
-            );
+            let best_move = Self::run_multithreaded_search(state_clone, max_depth, thread_count, contexts);
 
             if let Some(mv) = best_move {
                 println!("bestmove {}", mv.to_uci().unwrap_or(String::from("")));
@@ -123,22 +123,14 @@ impl Engine {
         });
     }
 
-
-    pub fn run_multithreaded_search(
-        state: GameState,
-        max_depth: i32,
-        thread_count: u8,
-        contexts : Vec<Arc<Mutex<SearchThread>>>,
-    ) -> Option<Move> {
+    pub fn run_multithreaded_search(state: GameState, max_depth: i32, thread_count: u8, contexts: Vec<Arc<Mutex<SearchThread>>>) -> Option<Move> {
         let mut handles = Vec::new();
 
         for thread_id in 0..thread_count {
             let ctx = Arc::clone(&contexts[thread_id as usize]);
             let worker_state = state.clone();
 
-            let handle = thread::spawn(move || {
-                ctx.lock().unwrap().run(worker_state.clone(), max_depth)
-            });
+            let handle = thread::spawn(move || ctx.lock().unwrap().run(worker_state.clone(), max_depth));
 
             handles.push(handle);
         }
@@ -159,7 +151,7 @@ impl Engine {
         let network_result = Network::from_bytes(globals::EMBEDDED_NNUE_BYTES);
 
         if let Ok(network) = network_result {
-            if !globals::NNUE_NETWORK.set(network).is_ok(){
+            if !globals::NNUE_NETWORK.set(network).is_ok() {
                 panic!("Failed to initialize NNE_NETWORK");
             }
         } else {
