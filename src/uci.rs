@@ -1,13 +1,13 @@
 use crate::board::game_state::GameState;
 use crate::engine::Engine;
 use crate::globals;
-use crate::move_gen::{generate_pseudo_legal_moves};
+use crate::move_gen::generate_pseudo_legal_moves;
+use crate::move_gen::move_list::MoveList;
+use crate::search::search_params::SearchParams;
 use crate::types::piece::PieceColor;
 use crate::types::{Move, MoveType};
 use std::str::SplitWhitespace;
 use std::time::Duration;
-use crate::move_gen::move_list::MoveList;
-use crate::search::search_params::SearchParams;
 
 /// Handles incoming uci commands. Returns true if the engine should quit.
 pub fn handle_uci_command(line: &str, engine: &mut Engine) -> bool {
@@ -19,7 +19,7 @@ pub fn handle_uci_command(line: &str, engine: &mut Engine) -> bool {
 
             println!("option name Hash type spin default 64 min 1 max 32000");
             println!("option name Threads type spin default 4 min 1 max 128");
-            
+            SearchParams::print_uci_options();
             println!("uciok");
         }
         Some("isready") => {
@@ -155,14 +155,8 @@ fn parse_uci_move(state: &GameState, move_str: &str) -> Option<Move> {
                     (promo_byte, mv.move_type()),
                     (b'q', MoveType::QueenPromotion | MoveType::QueenPromoCapture)
                         | (b'r', MoveType::RookPromotion | MoveType::RookPromoCapture)
-                        | (
-                            b'b',
-                            MoveType::BishopPromotion | MoveType::BishopPromoCapture
-                        )
-                        | (
-                            b'n',
-                            MoveType::KnightPromotion | MoveType::KnightPromoCapture
-                        )
+                        | (b'b', MoveType::BishopPromotion | MoveType::BishopPromoCapture)
+                        | (b'n', MoveType::KnightPromotion | MoveType::KnightPromoCapture)
                 );
                 if !is_matching_promo {
                     continue;
@@ -175,23 +169,39 @@ fn parse_uci_move(state: &GameState, move_str: &str) -> Option<Move> {
 }
 
 fn parse_options(tokens: &mut SplitWhitespace, engine: &mut Engine) {
+    let mut option_name: Option<String> = None;
+    let mut option_value: Option<&str> = None;
+
     if tokens.next() == Some("name") {
-        match tokens.next() {
-            Some("Threads") => {
-                if tokens.next() == Some("value") {
-                    if let Ok(number) = tokens.next().unwrap_or("").parse() {
-                        engine.options.threads = number;
-                    }
-                }
+        let mut name: String = "".to_string();
+        while let Some(some) = tokens.next() {
+            if some == String::from("value") {
+                break;
             }
-            Some("Hash") => {
-                if tokens.next() == Some("value") {
-                    if let Ok(size) = tokens.next().unwrap_or("").parse() {
-                        engine.options.hash_table_size_mb = size;
-                    }
-                }
-            }
-            _ => {}
+            name.push_str(some);
         }
+        option_name = Some(name);
+        option_value = tokens.next();
+    }
+
+    if option_name.is_none() || option_value.is_none() {
+        return;
+    }
+
+    match option_name.as_deref() {
+        Some("Threads") => {
+            if let Ok(number) = option_value.unwrap_or("").parse() {
+                engine.options.threads = number;
+            }
+        }
+        Some("Hash") => {
+            if let Ok(size) = option_value.unwrap_or("").parse() {
+                engine.options.hash_table_size_mb = size;
+            }
+        }
+        Some(name) => {
+            engine.search_par.set_option(name, option_value.unwrap());
+        }
+        _ => {}
     }
 }

@@ -25,7 +25,7 @@ impl Default for EngineOptions {
 }
 
 pub struct Engine {
-    search_par: SearchParams,
+    pub(crate) search_par: SearchParams,
     pub(crate) options: EngineOptions,
     pub(crate) state: GameState,
     table: Arc<TranspositionTable>,
