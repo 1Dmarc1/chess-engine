@@ -1,6 +1,5 @@
 use crate::globals;
 use crate::globals::{MATE_SCORE, MIN_MATE_SCORE};
-use crate::search::lmr::get_lmr;
 use crate::search::move_picker::MovePicker;
 use crate::search::search_worker::core::SearchWorker;
 use crate::search::search_worker::search::{MoveContext, SearchState};
@@ -164,7 +163,7 @@ impl SearchWorker {
         if moves_played >= self.params.lmr_min_moves && !in_check && depth >= self.params.lmr_min_depth && mv_ctx.mv.is_quiet() && !mv_ctx.gives_check
         {
             let history_score = self.history.score_quiet_move(mv_ctx.mv, ply, &self.stack);
-            reduction = get_lmr(depth, moves_played, history_score, self.params.lmr_history_divisor);
+            reduction = self.get_lmr(depth, moves_played, history_score);
         }
 
         // Perform a reduced null window search
