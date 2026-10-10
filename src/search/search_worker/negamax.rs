@@ -32,11 +32,6 @@ impl SearchWorker<'_> {
         self.nodes += 1;
         let orig_alpha = alpha;
 
-        let static_eval = self.evaluate(ply);
-        self.stack[ply].static_eval = static_eval;
-
-        let is_pv_node = beta - alpha > 1;
-        self.stack[ply].is_pv_node = is_pv_node;
 
         let mut tt_move = None;
         if let Some(entry) = self.tt_probe() {
@@ -45,6 +40,12 @@ impl SearchWorker<'_> {
             }
             tt_move = Some(entry.best_move());
         }
+
+        let static_eval = self.evaluate(ply);
+        self.stack[ply].static_eval = static_eval;
+
+        let is_pv_node = beta - alpha > 1;
+        self.stack[ply].is_pv_node = is_pv_node;
 
         // Reduce depth if no tt_move was found
         if depth >= 4 && tt_move.is_none() {
@@ -154,23 +155,36 @@ impl SearchWorker<'_> {
     /// Searches a single move and returns its score.
     #[inline]
     fn search_single_move(&mut self, depth: i32, ply: usize, alpha: i32, beta: i32, moves_played: usize, mv_ctx: &MoveContext) -> i32 {
-        let mut eval;
         let in_check = self.stack[ply].in_check;
+        let is_pv = self.stack[ply].is_pv_node;
+        if moves_played == 1 {
+            return -self.negamax(depth - 1, ply + 1, -beta, -alpha);
+        }
 
-        // Apply LMR
-        if moves_played >= self.params.lmr_min_moves && !in_check && depth >= self.params.lmr_min_depth && mv_ctx.mv.is_quiet() && !mv_ctx.gives_check {
+        // Apply late move reduction
+        let mut reduction = 0;
+        if moves_played >= self.params.lmr_min_moves
+            && !in_check
+            && depth >= self.params.lmr_min_depth
+            && mv_ctx.mv.is_quiet()
+            && !mv_ctx.gives_check
+        {
             let history_score = self.history.score_quiet_move(mv_ctx.mv, ply, &self.stack);
-            let reduction = get_lmr(depth, moves_played, history_score, self.params.lmr_history_divisor);
+            reduction = get_lmr(depth, moves_played, history_score, self.params.lmr_history_divisor);
+        }
 
-            // Zero-window reduced search
-            eval = -self.negamax(depth - 1 - reduction, ply + 1, -alpha - 1, -alpha);
+        // Perform a reduced null window search
+        let mut eval = -self.negamax(depth - 1 - reduction, ply + 1, -alpha - 1, -alpha);
 
-            // Re-search at full depth if it beats alpha
-            if eval > alpha {
-                eval = -self.negamax(depth - 1, ply + 1, -beta, -alpha);
-            }
-        } else {
-            // Full depth search
+        // If the reduced null window search beat alpha verify at full depth
+        if eval > alpha && reduction > 0 {
+            if self.is_time_up() { return 0; }
+            eval = -self.negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
+        }
+
+        // If its a pv node, research at full depth if necessary
+        if is_pv && eval > alpha && eval < beta {
+            if self.is_time_up() { return 0; }
             eval = -self.negamax(depth - 1, ply + 1, -beta, -alpha);
         }
 
@@ -178,7 +192,7 @@ impl SearchWorker<'_> {
     }
 
     #[inline]
-    pub(crate) fn should_prune_move(&mut self, depth: i32, mv: Move, ply: usize, search_state: &SearchState, context: &MoveContext) -> bool {
+    fn should_prune_move(&mut self, depth: i32, mv: Move, ply: usize, search_state: &SearchState, context: &MoveContext) -> bool {
         let mut res = false;
         let stack_entry = self.stack[ply];
         if stack_entry.is_pv_node || stack_entry.in_check || context.gives_check {
@@ -209,7 +223,7 @@ impl SearchWorker<'_> {
     }
 
     #[inline]
-    pub(crate) fn try_pre_move_pruning(&mut self, depth: i32, ply: usize, beta: i32) -> Option<i32> {
+    fn try_pre_move_pruning(&mut self, depth: i32, ply: usize, beta: i32) -> Option<i32> {
         let static_eval = self.stack[ply].static_eval;
         let in_check = self.stack[ply].in_check;
 

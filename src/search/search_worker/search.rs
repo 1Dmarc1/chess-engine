@@ -127,6 +127,7 @@ impl<'a> SearchWorker<'a> {
         let mut picker = MovePicker::new(prev_best_move, None, None, 0);
         let mut max_eval = -INFINITY;
         let mut best_move = None;
+        let mut searched = 0;
         let orig_alpha = alpha;
 
         while let Some(mv) = picker.next_move(self) {
@@ -138,8 +139,18 @@ impl<'a> SearchWorker<'a> {
                 best_move = Some(mv);
             }
 
-            let eval = -self.negamax(depth - 1, 1, -beta, -alpha);
+            let eval = if searched == 0 {
+                -self.negamax(depth - 1, 1, -beta, -alpha)
+            } else {
+                let e = -self.negamax(depth - 1, 1, -alpha - 1, -alpha);
+                if e > alpha && e < beta && !self.is_time_up() {
+                    -self.negamax(depth - 1, 1, -beta, -alpha)
+                } else {
+                    e
+                }
+            };
             self.undo_move(mv);
+            searched += 1;
 
             if self.is_time_up() {
                 if prev_best_move.is_none() {
