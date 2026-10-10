@@ -6,7 +6,6 @@ use crate::search::search_worker::core::SearchWorker;
 use crate::search::search_worker::search::{MoveContext, SearchState};
 use crate::types::piece::PieceColor;
 use crate::types::{Move, piece};
-use std::i32::MIN;
 
 impl SearchWorker<'_> {
     pub(crate) fn negamax(&mut self, mut depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
@@ -204,7 +203,7 @@ impl SearchWorker<'_> {
         if is_quiet {
             // Futility pruning
             if depth <= self.params.fut_max_depth && alpha > -MIN_MATE_SCORE && static_eval.abs() < MIN_MATE_SCORE {
-                let margin = self.params.fut_base
+                let margin = self.params.fut_base_margin
                     + self.params.fut_per_depth * depth
                     - if improving { 0 } else { self.params.fut_not_improving };
                 if static_eval + margin <= alpha {

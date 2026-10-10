@@ -56,10 +56,10 @@ define_search_params! {
     lmr_history_divisor : i32 = (8885, 2048, 32768),
 
     // Futility Pruning
-    fut_max_depth : i32 = (6, 1, 12),
-    fut_base : i32 = (100, 0, 400),
-    fut_per_depth : i32 = (80, 20, 300),
-    fut_not_improving : i32 = (0, 0, 200),
+    fut_max_depth : i32 = (7, 1, 12),
+    fut_base_margin : i32 = (119, 0, 400),
+    fut_per_depth : i32 = (90, 20, 300),
+    fut_not_improving : i32 = (41, 0, 200),
 
     // Quiescence
     qsearch_see_margin : i32 = (147, 0, 500),
