@@ -19,10 +19,19 @@ pub static LMR_TABLE: LazyLock<[[i32; MAX_SEARCH_PLY]; MAX_SEARCH_PLY]> = LazyLo
 /// * `depth` - The current remaining depth of the search.
 /// * `move_num` - The index of the move currently being searched (e.g., 1 for the first move, 15 for the fifteenth).
 #[inline(always)]
-pub fn get_lmr(depth: i32, move_num: usize) -> i32 {
+pub fn get_lmr(depth: i32, move_num: usize, history_score : i32, history_divisor : i32) -> i32 {
     let d = (depth as usize).clamp(0, MAX_SEARCH_PLY - 1);
     let m = move_num.clamp(0, MAX_SEARCH_PLY - 1);
     let mut r = LMR_TABLE[d][m];
-    r = r.max(1);
-    r
+
+    if r == 0{
+        return 0;
+    }
+
+    if history_divisor > 0{
+        let history_adj = history_score / history_divisor;
+        r -= history_adj;
+    }
+
+    r.clamp(0, depth - 1)
 }

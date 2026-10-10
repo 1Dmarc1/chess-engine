@@ -50,6 +50,7 @@ define_search_params! {
     rfp_margin_multiplier: i32 = (147, 50, 400),
     nmp_min_depth: i32 = (1, 1, 6),
     nmp_reduction: i32 = (7, 1, 10),
+    lmr_history_divisor : i32 = (8885, 2048, 32768),
 
     // Quiescence
     qsearch_see_margin : i32 = (147, 0, 500),

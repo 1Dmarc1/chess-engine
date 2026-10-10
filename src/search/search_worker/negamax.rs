@@ -159,7 +159,8 @@ impl SearchWorker<'_> {
 
         // Apply LMR
         if moves_played >= self.params.lmr_min_moves && !in_check && depth >= self.params.lmr_min_depth && mv_ctx.mv.is_quiet() && !mv_ctx.gives_check {
-            let reduction = get_lmr(depth, moves_played);
+            let history_score = self.history.score_quiet_move(mv_ctx.mv, ply, &self.stack);
+            let reduction = get_lmr(depth, moves_played, history_score, self.params.lmr_history_divisor);
 
             // Zero-window reduced search
             eval = -self.negamax(depth - 1 - reduction, ply + 1, -alpha - 1, -alpha);
