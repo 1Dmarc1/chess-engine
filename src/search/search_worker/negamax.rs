@@ -6,6 +6,7 @@ use crate::search::search_worker::core::SearchWorker;
 use crate::search::search_worker::search::{MoveContext, SearchState};
 use crate::types::piece::PieceColor;
 use crate::types::{Move, piece};
+use std::i32::MIN;
 
 impl SearchWorker<'_> {
     pub(crate) fn negamax(&mut self, mut depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
@@ -31,7 +32,6 @@ impl SearchWorker<'_> {
 
         self.nodes += 1;
         let orig_alpha = alpha;
-
 
         let mut tt_move = None;
         if let Some(entry) = self.tt_probe() {
@@ -69,7 +69,6 @@ impl SearchWorker<'_> {
         // Iterate over each move
         let mut search_state: SearchState = SearchState::default();
         while let Some(mv) = picker.next_move(self) {
-
             // SEE pruning
             if depth <= 4 && search_state.best_move.is_some() && !self.stack[ply].in_check {
                 // Require losing more material at deeper depths before pruning
@@ -88,7 +87,7 @@ impl SearchWorker<'_> {
             let gives_check = self.state.is_in_check(self.state.board.side_to_move);
             let move_context = MoveContext::new(mv, gives_check);
 
-            if search_state.best_move.is_some() && self.should_prune_move(depth, mv, ply, &search_state, &move_context) {
+            if search_state.best_move.is_some() && self.should_prune_move(depth, ply, alpha, &search_state, &move_context) {
                 self.undo_move(mv);
                 continue;
             }
@@ -163,11 +162,7 @@ impl SearchWorker<'_> {
 
         // Apply late move reduction
         let mut reduction = 0;
-        if moves_played >= self.params.lmr_min_moves
-            && !in_check
-            && depth >= self.params.lmr_min_depth
-            && mv_ctx.mv.is_quiet()
-            && !mv_ctx.gives_check
+        if moves_played >= self.params.lmr_min_moves && !in_check && depth >= self.params.lmr_min_depth && mv_ctx.mv.is_quiet() && !mv_ctx.gives_check
         {
             let history_score = self.history.score_quiet_move(mv_ctx.mv, ply, &self.stack);
             reduction = get_lmr(depth, moves_played, history_score, self.params.lmr_history_divisor);
@@ -178,13 +173,17 @@ impl SearchWorker<'_> {
 
         // If the reduced null window search beat alpha verify at full depth
         if eval > alpha && reduction > 0 {
-            if self.is_time_up() { return 0; }
+            if self.is_time_up() {
+                return 0;
+            }
             eval = -self.negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
         }
 
         // If its a pv node, research at full depth if necessary
         if is_pv && eval > alpha && eval < beta {
-            if self.is_time_up() { return 0; }
+            if self.is_time_up() {
+                return 0;
+            }
             eval = -self.negamax(depth - 1, ply + 1, -beta, -alpha);
         }
 
@@ -192,19 +191,31 @@ impl SearchWorker<'_> {
     }
 
     #[inline]
-    fn should_prune_move(&mut self, depth: i32, mv: Move, ply: usize, search_state: &SearchState, context: &MoveContext) -> bool {
+    fn should_prune_move(&mut self, depth: i32, ply: usize, alpha: i32, search_state: &SearchState, context: &MoveContext) -> bool {
         let mut res = false;
-        let stack_entry = self.stack[ply];
-        if stack_entry.is_pv_node || stack_entry.in_check || context.gives_check {
+        let (is_pv, in_check, improving, static_eval, is_quiet) = {
+            let e = &self.stack[ply];
+            (e.is_pv_node, e.in_check, e.improving, e.static_eval, context.mv.is_quiet())
+        };
+        if is_pv || in_check || context.gives_check {
             return false;
         }
-        let is_quiet = mv.is_quiet();
 
         if is_quiet {
+            // Futility pruning
+            if depth <= self.params.fut_max_depth && alpha > -MIN_MATE_SCORE && static_eval.abs() < MIN_MATE_SCORE {
+                let margin = self.params.fut_base
+                    + self.params.fut_per_depth * depth
+                    - if improving { 0 } else { self.params.fut_not_improving };
+                if static_eval + margin <= alpha {
+                    return true; // If we fall below alpha even with the added margin the move can be pruned
+                }
+            }
+
             // History pruning
             if depth <= self.params.hist_prune_max_depth {
-                let hist_score = self.history.score_quiet_move(mv, ply, &self.stack);
-                if hist_score < - self.params.hist_prune_margin * depth {
+                let hist_score = self.history.score_quiet_move(context.mv, ply, &self.stack);
+                if hist_score < -self.params.hist_prune_margin * depth {
                     res = true;
                 }
             }
@@ -239,26 +250,35 @@ impl SearchWorker<'_> {
         }
 
         // Null Move Pruning
-        if depth >= self.params.nmp_min_depth && !in_check && ply > 0 {
+        if !self.stack[ply].is_pv_node
+            && depth >= self.params.nmp_min_depth
+            && !in_check
+            && ply > 0
+            && static_eval >= beta
+            && beta > -MIN_MATE_SCORE
+            && self.stack[ply].current_move.is_some()
+        // no two null moves in a row
+        {
             let us = self.state.board.side_to_move;
-            let pawns = if us == PieceColor::White {
-                self.state.board.pieces[piece::W_PAWN]
+            let (pawns, kings) = if us == PieceColor::White {
+                (self.state.board.pieces[piece::W_PAWN], self.state.board.pieces[piece::W_KING])
             } else {
-                self.state.board.pieces[piece::B_PAWN]
-            };
-            let kings = if us == PieceColor::White {
-                self.state.board.pieces[piece::W_KING]
-            } else {
-                self.state.board.pieces[piece::B_KING]
+                (self.state.board.pieces[piece::B_PAWN], self.state.board.pieces[piece::B_KING])
             };
 
             if (self.state.friendly_pieces().0 ^ pawns.0 ^ kings.0) != 0 {
+                let r = self.params.nmp_reduction + depth / 3 + ((static_eval - beta) / 200).min(3);
+
                 self.make_null_move(ply);
-                let null_eval = -self.negamax(depth - 1 - self.params.nmp_reduction, ply + 1, -beta, -beta + 1);
+                let null_eval = -self.negamax((depth - 1 - r).max(0), ply + 1, -beta, -beta + 1);
                 self.undo_null_move();
 
+                if self.is_time_up() {
+                    return Some(0);
+                }
+
                 if null_eval >= beta {
-                    return Some(beta);
+                    return Some(if null_eval >= MIN_MATE_SCORE { beta } else { null_eval });
                 }
             }
         }

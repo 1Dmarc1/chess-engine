@@ -48,9 +48,18 @@ define_search_params! {
     hist_prune_max_depth: i32 = (2, 1, 6),
     rfp_max_depth: i32 = (9, 1, 12),
     rfp_margin_multiplier: i32 = (147, 50, 400),
+
+    // Null move pruning
     nmp_min_depth: i32 = (1, 1, 6),
     nmp_reduction: i32 = (7, 1, 10),
+
     lmr_history_divisor : i32 = (8885, 2048, 32768),
+
+    // Futility Pruning
+    fut_max_depth : i32 = (6, 1, 12),
+    fut_base : i32 = (100, 0, 400),
+    fut_per_depth : i32 = (80, 20, 300),
+    fut_not_improving : i32 = (0, 0, 200),
 
     // Quiescence
     qsearch_see_margin : i32 = (147, 0, 500),
