@@ -44,15 +44,15 @@ define_search_params! {
     // Negamax
     lmr_min_moves: usize = (2, 1, 10),
     lmr_min_depth: i32 = (2, 1, 6),
-    hist_prune_margin: i32 = (1469, 100, 5000),
+    hist_prune_margin: i32 = (1391, 100, 5000),
     hist_prune_max_depth: i32 = (2, 1, 6),
-    rfp_max_depth: i32 = (8, 1, 12),
-    rfp_margin_multiplier: i32 = (179, 50, 400),
+    rfp_max_depth: i32 = (9, 1, 12),
+    rfp_margin_multiplier: i32 = (147, 50, 400),
     nmp_min_depth: i32 = (1, 1, 6),
     nmp_reduction: i32 = (7, 1, 10),
 
     // Quiescence
-    qsearch_see_margin : i32 = (251, 0, 500),
-    qsearch_see_threshold_floor : i32 = (2, -100, 100),
-    qsearch_max_ply : usize = (28, 16, 64),
+    qsearch_see_margin : i32 = (147, 0, 500),
+    qsearch_see_threshold_floor : i32 = (1, -100, 100),
+    qsearch_max_ply : usize = (64, 16, 64),
 }
