@@ -28,6 +28,7 @@ pub struct Engine {
     pub(crate) search_par: SearchParams,
     pub(crate) options: EngineOptions,
     pub(crate) state: GameState,
+    network : Arc<Network>,
     table: Arc<TranspositionTable>,
     stop_search: Arc<AtomicBool>,
     is_searching: Arc<AtomicBool>,
@@ -36,12 +37,12 @@ pub struct Engine {
 
 impl Engine {
     pub fn new() -> Self {
-        if !Self::initialize_network() {
-            panic!("Failed to initialize NNUE_NETWORK");
-        }
+
+        let shared_network = Arc::new(Network::from_bytes (globals::EMBEDDED_NNUE_BYTES).expect("NNUE load failed"));
         move_gen::setup(); // Ensure the move_gen tables are filled.
 
-        Engine {
+        let tmp = Engine {
+            network: shared_network,
             search_par : SearchParams::default(),
             options: EngineOptions::default(),
             state: GameState::default(),
@@ -49,7 +50,9 @@ impl Engine {
             stop_search: Arc::new(AtomicBool::new(false)),
             is_searching: Arc::new(AtomicBool::new(false)),
             contexts: Vec::new(),
-        }
+        };
+
+        tmp
     }
 
     pub fn get_table(&self) -> Arc<TranspositionTable> {
@@ -74,6 +77,8 @@ impl Engine {
             return;
         }
 
+
+
         // Setup thread contexts
         let thread_count = self.options.threads;
         self.contexts.clear();
@@ -81,6 +86,7 @@ impl Engine {
             let id = self.contexts.len() as u8;
             self.contexts.push(Arc::new(Mutex::new(SearchThread::new(
                 id,
+                self.network.clone(),
                 self.table.clone(),
                 self.stop_search.clone(),
                 self.search_par.clone(),
@@ -144,19 +150,5 @@ impl Engine {
             }
         }
         main_best_move
-    }
-
-    fn initialize_network() -> bool {
-        let mut network_initialized = true;
-        let network_result = Network::from_bytes(globals::EMBEDDED_NNUE_BYTES);
-
-        if let Ok(network) = network_result {
-            if !globals::NNUE_NETWORK.set(network).is_ok() {
-                panic!("Failed to initialize NNE_NETWORK");
-            }
-        } else {
-            network_initialized = false;
-        }
-        network_initialized
     }
 }

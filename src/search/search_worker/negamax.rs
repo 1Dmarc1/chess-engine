@@ -7,7 +7,7 @@ use crate::search::search_worker::search::{MoveContext, SearchState};
 use crate::types::piece::PieceColor;
 use crate::types::{Move, piece};
 
-impl SearchWorker<'_> {
+impl SearchWorker {
     pub(crate) fn negamax(&mut self, mut depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
         if self.is_time_up() || ply > 0 && self.state.is_repetition() || self.state.halfmove_clock >= 100 {
             return 0;

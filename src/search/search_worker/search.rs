@@ -42,7 +42,7 @@ impl Default for SearchState {
     }
 }
 
-impl<'a> SearchWorker<'a> {
+impl SearchWorker {
     /// Tactical Quiescence Search
     pub(crate) fn quiescence(&mut self, mut alpha: i32, beta: i32, ply: usize) -> i32 {
         self.nodes += 1;

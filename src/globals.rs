@@ -1,8 +1,3 @@
-use nnue_rs::Network;
-use std::sync::OnceLock;
-
-pub static NNUE_NETWORK: OnceLock<Network> = OnceLock::new();
-
 /// Maximum depth supported by the search stack and history arrays.
 pub const MAX_SEARCH_PLY: usize = 128;
 

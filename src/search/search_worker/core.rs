@@ -24,11 +24,11 @@ pub struct StackEntry {
     pub(crate) in_check: bool,
 }
 
-pub struct SearchWorker<'a> {
+pub struct SearchWorker {
     pub(crate) params: SearchParams,
     pub(crate) state: GameState,
     pub(crate) table: Arc<TranspositionTable>,
-    pub(crate) network: &'a Network,
+    pub(crate) network: Arc<Network>,
 
     should_stop: Arc<AtomicBool>,
 
@@ -39,12 +39,12 @@ pub struct SearchWorker<'a> {
     pub(crate) nodes: u64,
 }
 
-impl<'a> SearchWorker<'a> {
+impl SearchWorker {
     pub fn new(
         params: SearchParams,
         state: GameState,
         table: Arc<TranspositionTable>,
-        network: &'a Network,
+        network: Arc<Network>,
         should_stop: Arc<AtomicBool>,
     ) -> Self {
         let mut accumulators = std::array::from_fn(|_| network.empty_accumulator());
