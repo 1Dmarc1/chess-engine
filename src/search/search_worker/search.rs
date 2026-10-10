@@ -1,11 +1,8 @@
-use crate::globals;
 use crate::globals::{INFINITY, MATE_SCORE};
 use crate::move_gen::MoveList;
 use crate::search::move_picker::MovePicker;
 use crate::search::search_worker::core::SearchWorker;
 use crate::types::Move;
-
-const SEE_MARGIN: i32 = 200;
 
 pub struct SearchState {
     pub max_eval: i32,
@@ -23,8 +20,8 @@ pub struct MoveContext {
 }
 
 impl MoveContext {
-    pub fn new(mv: Move, gives_check : bool) -> MoveContext {
-        MoveContext{
+    pub fn new(mv: Move, gives_check: bool) -> MoveContext {
+        MoveContext {
             mv,
             gives_check,
             extension: 0,
@@ -45,17 +42,14 @@ impl Default for SearchState {
     }
 }
 
-
 impl<'a> SearchWorker<'a> {
-
-
     /// Tactical Quiescence Search
     pub(crate) fn quiescence(&mut self, mut alpha: i32, beta: i32, ply: usize) -> i32 {
         self.nodes += 1;
         if self.is_time_up() {
             return 0;
         }
-        if ply >= globals::MAX_SEARCH_PLY - 1 {
+        if ply >= self.params.qsearch_max_ply {
             return self.evaluate(ply);
         }
 
@@ -97,7 +91,7 @@ impl<'a> SearchWorker<'a> {
         while let Some(mv) = picker.next_move(self) {
             if !in_check {
                 // Static exchange evaluation
-                let threshold = (alpha - static_eval - SEE_MARGIN).max(0);
+                let threshold = (alpha - static_eval - self.params.qsearch_see_margin).max(self.params.qsearch_see_threshold_floor);
                 if !mv.is_promotion() && !self.state.is_move_greater_equal(mv, threshold) {
                     continue;
                 }
@@ -129,15 +123,8 @@ impl<'a> SearchWorker<'a> {
         best_value
     }
 
-    pub(crate) fn search_root(
-        &mut self,
-        depth: i32,
-        previous_best_move: Option<Move>,
-        mut alpha: i32,
-        beta: i32
-    ) -> Option<(Move, i32)> {
-
-        let mut picker = MovePicker::new(previous_best_move, None, None, 0);
+    pub(crate) fn search_root(&mut self, depth: i32, prev_best_move: Option<Move>, mut alpha: i32, beta: i32) -> Option<(Move, i32)> {
+        let mut picker = MovePicker::new(prev_best_move, None, None, 0);
         let mut max_eval = -INFINITY;
         let mut best_move = None;
         let orig_alpha = alpha;
@@ -155,7 +142,7 @@ impl<'a> SearchWorker<'a> {
             self.undo_move(mv);
 
             if self.is_time_up() {
-                if previous_best_move.is_none() {
+                if prev_best_move.is_none() {
                     break;
                 }
                 return None;
