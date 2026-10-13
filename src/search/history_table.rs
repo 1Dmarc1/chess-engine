@@ -1,6 +1,6 @@
 use std::alloc::{alloc_zeroed, Layout};
 use crate::search::evaluation;
-use crate::search::search_worker::core::StackEntry;
+use crate::search::search_worker::core::SearchStackEntry;
 use crate::types::{piece, Move};
 
 /// Stores a score for every pair of (previous_piece, previous_to_square) and (current_piece, current_to_square).
@@ -38,7 +38,7 @@ impl HistoryTable {
 
     /// Returns a score for a quiet move depending on the scores stored in the history table.
     #[inline]
-    pub fn score_quiet_move(&self, mv: Move, ply : usize, stack: &[StackEntry]) -> i32{
+    pub fn score_quiet_move(&self, mv: Move, ply : usize, stack: &[SearchStackEntry]) -> i32{
         let from = mv.from() as usize;
         let to = mv.to() as usize;
         let curr_piece = mv.landed_piece();
@@ -97,7 +97,7 @@ impl HistoryTable {
         }
     }
 
-    pub(crate) fn update_quiet_move_history(&mut self, depth : i32, ply : usize, cutoff_mv : Move, color_idx: usize, stack: &[StackEntry], failed_quiet_moves: &[Move]) {
+    pub(crate) fn update_quiet_move_history(&mut self, depth : i32, ply : usize, cutoff_mv : Move, color_idx: usize, stack: &[SearchStackEntry], failed_quiet_moves: &[Move]) {
         let bonus = (16 * depth * depth).min(1600) as i16;
 
         let from = cutoff_mv.from() as usize;

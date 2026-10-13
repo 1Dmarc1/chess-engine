@@ -7,6 +7,7 @@ use crate::search::search_params::SearchParams;
 use crate::types::piece::PieceColor;
 use crate::types::{Move, MoveType};
 use std::str::SplitWhitespace;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Handles incoming uci commands. Returns true if the engine should quit.
@@ -200,7 +201,8 @@ fn parse_options(tokens: &mut SplitWhitespace, engine: &mut Engine) {
             }
         }
         Some(name) => {
-            engine.search_par.set_option(name, option_value.unwrap());
+            let shared = Arc::make_mut(&mut engine.thread_data);
+            shared.search_params.set_option(name, option_value.unwrap());
         }
         _ => {}
     }

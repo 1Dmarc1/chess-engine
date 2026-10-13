@@ -1,7 +1,8 @@
 use crate::board::game_state::GameState;
 use crate::board::transposition_table;
 use crate::board::transposition_table::TranspositionTable;
-use crate::globals::{INFINITY};
+use crate::globals;
+use crate::globals::INFINITY;
 use crate::search::history_table::HistoryTable;
 use crate::search::search_params::SearchParams;
 use crate::search::search_worker::core::SearchWorker;
@@ -11,36 +12,70 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
+/// Data shared by every thread.
+#[derive(Clone)]
+pub struct SharedThreadData {
+    /// The shared transposition table
+    pub tt: Arc<TranspositionTable>,
+    pub network: Arc<Network>,
+    /// Stop flag
+    pub stop: Arc<AtomicBool>,
+    /// Search params
+    pub search_params: SearchParams,
+}
+
+impl SharedThreadData {
+    pub fn new(tt: Arc<TranspositionTable>, network: Arc<Network>, stop: Arc<AtomicBool>, params: SearchParams) -> Self {
+        Self { tt, network, stop, search_params: params }
+    }
+}
+
+impl Default for SharedThreadData {
+    fn default() -> Self {
+        let network = Network::from_bytes(globals::EMBEDDED_NNUE_BYTES).expect("NNUE load failed");
+        SharedThreadData::new(
+            Arc::new(TranspositionTable::new(64)),
+            Arc::new(network),
+            Arc::new(AtomicBool::new(false)),
+            SearchParams::default(),
+        )
+    }
+}
+
+/// Data owned by ONE thread.
+pub struct ThreadData {
+    // GameState
+    // Move history
+}
+
 pub struct SearchThread {
-    pub quiet_move_history: HistoryTable,
+    pub move_history: HistoryTable,
     pub thread_id: u8,
-    network: Arc<Network>,
-    tt: Arc<TranspositionTable>,
-    stop: Arc<AtomicBool>,
-    search_par: SearchParams,
+    shared: Arc<SharedThreadData>,
 }
 
 impl SearchThread {
-    pub fn new(thread_id: u8, network: Arc<Network>, tt: Arc<TranspositionTable>, stop: Arc<AtomicBool>, search_par: SearchParams) -> Self {
+    pub fn new(thread_id: u8, shared : Arc<SharedThreadData>) -> Self {
         Self {
+            move_history: HistoryTable::new(),
             thread_id,
-            network,
-            quiet_move_history: HistoryTable::new(),
-            tt,
-            stop,
-            search_par,
+            shared
         }
     }
 
-    pub fn run(&self, mut state: GameState, max_depth: i32) -> Option<Move> {
+    pub fn run(&mut self, mut state: GameState, max_depth: i32) -> Option<Move> {
         self.iterative_deepening(&mut state, max_depth)
     }
 
     /// Root search using Iterative Deepening
-    pub fn iterative_deepening(&self, state: &mut GameState, max_depth: i32) -> Option<Move> {
+    pub fn iterative_deepening(&mut self, state: &mut GameState, max_depth: i32) -> Option<Move> {
         let start_time = Instant::now();
 
-        let mut worker = SearchWorker::new(self.search_par.clone(), state.clone(), self.tt.clone(), self.network.clone(), self.stop.clone()); // Create a new search worker
+        let mut worker = SearchWorker::new(
+            &self.shared,
+            state.clone(),
+            &mut self.move_history
+        ); // Create a new search worker
         let zobrist = &transposition_table::ZOBRIST; // TODO: Remove?
         worker.state.hash = zobrist.compute_hash(&worker.state);
 

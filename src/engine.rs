@@ -1,10 +1,7 @@
 use crate::board::game_state::GameState;
-use crate::board::transposition_table::TranspositionTable;
-use crate::search::search_params::SearchParams;
-use crate::search::search_thread::SearchThread;
+use crate::search::search_thread::{SearchThread, SharedThreadData};
 use crate::types::Move;
-use crate::{globals, move_gen};
-use nnue_rs::Network;
+use crate::move_gen;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -25,50 +22,38 @@ impl Default for EngineOptions {
 }
 
 pub struct Engine {
-    pub(crate) search_par: SearchParams,
     pub(crate) options: EngineOptions,
     pub(crate) state: GameState,
-    network : Arc<Network>,
-    table: Arc<TranspositionTable>,
-    stop_search: Arc<AtomicBool>,
-    is_searching: Arc<AtomicBool>,
-    contexts: Vec<Arc<Mutex<SearchThread>>>,
+    pub(crate) thread_data: Arc<SharedThreadData>,
+    threads: Vec<Arc<Mutex<SearchThread>>>,
+    is_searching : Arc<AtomicBool>,
 }
 
 impl Engine {
     pub fn new() -> Self {
-
-        let shared_network = Arc::new(Network::from_bytes (globals::EMBEDDED_NNUE_BYTES).expect("NNUE load failed"));
         move_gen::setup(); // Ensure the move_gen tables are filled.
 
         let tmp = Engine {
-            network: shared_network,
-            search_par : SearchParams::default(),
             options: EngineOptions::default(),
+            thread_data: Arc::new(
+                SharedThreadData::default()
+            ),
             state: GameState::default(),
-            table: Arc::new(TranspositionTable::new(64)),
-            stop_search: Arc::new(AtomicBool::new(false)),
+            threads: Vec::new(),
             is_searching: Arc::new(AtomicBool::new(false)),
-            contexts: Vec::new(),
         };
-
         tmp
-    }
-
-    pub fn get_table(&self) -> Arc<TranspositionTable> {
-        self.table.clone()
     }
 
     pub fn reset_for_new_game(&mut self) {
         self.state = GameState::default();
-        self.table = Arc::new(TranspositionTable::new(self.options.hash_table_size_mb));
-        self.stop_search = Arc::new(AtomicBool::new(false));
         self.is_searching = Arc::new(AtomicBool::new(false));
-        self.contexts.clear();
+        self.thread_data = Arc::new(SharedThreadData::default());
+        self.threads.clear();
     }
 
     pub fn stop_search(&mut self) {
-        self.stop_search.store(true, Ordering::Relaxed);
+        self.thread_data.stop.store(true, Ordering::Relaxed);
     }
 
     pub fn start_search(&mut self, allocated_time: Option<Duration>, max_depth: i32) {
@@ -77,31 +62,25 @@ impl Engine {
             return;
         }
 
-
-
         // Setup thread contexts
         let thread_count = self.options.threads;
-        self.contexts.clear();
-        while self.contexts.len() < thread_count as usize {
-            let id = self.contexts.len() as u8;
-            self.contexts.push(Arc::new(Mutex::new(SearchThread::new(
+        self.threads.clear(); // TODO: This has to be removed for the history scores to work correctly across searches
+        while self.threads.len() < thread_count as usize {
+            let id = self.threads.len() as u8;
+            self.threads.push(Arc::new(Mutex::new(SearchThread::new(
                 id,
-                self.network.clone(),
-                self.table.clone(),
-                self.stop_search.clone(),
-                self.search_par.clone(),
+                self.thread_data.clone(),
             ))));
         }
-        self.contexts.truncate(thread_count as usize);
-        let contexts = self.contexts.clone();
+        self.threads.truncate(thread_count as usize);
 
-        self.table.inc_generation();
 
-        self.stop_search.store(false, Ordering::Relaxed); // Reset the stop flag
+        self.thread_data.tt.inc_generation();
+
+        self.thread_data.stop.store(false, Ordering::Relaxed); // Reset the stop flag
         self.is_searching.store(true, Ordering::Relaxed); // Set is searching to true
 
-        let stop_for_timer = Arc::clone(&self.stop_search);
-        let searching_status = Arc::clone(&self.is_searching);
+        let stop_for_timer = Arc::clone(&self.thread_data.stop);
 
         // Spawn a timer thread
         if let Some(time_limit) = allocated_time {
@@ -112,12 +91,13 @@ impl Engine {
         }
 
         // Create copies for the thread to use
+        let threads = self.threads.clone();
         let state_clone = self.state.clone(); // Copy the current game state
-        let thread_count = self.options.threads;
+        let search_state = self.is_searching.clone();
 
         // Spawn the search thread
         thread::spawn(move || {
-            let best_move = Self::run_multithreaded_search(state_clone, max_depth, thread_count, contexts);
+            let best_move = Self::run_multithreaded_search(state_clone, max_depth, threads);
 
             if let Some(mv) = best_move {
                 println!("bestmove {}", mv.to_uci().unwrap_or(String::from("")));
@@ -125,15 +105,15 @@ impl Engine {
                 println!("bestmove 0000"); // Absolute fallback so the GUI never hangs
             }
 
-            searching_status.store(false, Ordering::Relaxed);
+            search_state.store(false, Ordering::Relaxed);
         });
     }
 
-    pub fn run_multithreaded_search(state: GameState, max_depth: i32, thread_count: u8, contexts: Vec<Arc<Mutex<SearchThread>>>) -> Option<Move> {
+    pub fn run_multithreaded_search(state: GameState, max_depth: i32, threads: Vec<Arc<Mutex<SearchThread>>>) -> Option<Move> {
         let mut handles = Vec::new();
 
-        for thread_id in 0..thread_count {
-            let ctx = Arc::clone(&contexts[thread_id as usize]);
+        for thread in threads{
+            let ctx = Arc::clone(&thread);
             let worker_state = state.clone();
 
             let handle = thread::spawn(move || ctx.lock().unwrap().run(worker_state.clone(), max_depth));

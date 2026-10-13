@@ -15,7 +15,7 @@ pub static LMR_TABLE: LazyLock<[[i32; MAX_SEARCH_PLY]; MAX_SEARCH_PLY]> = LazyLo
 });
 
 
-impl SearchWorker{
+impl SearchWorker<'_>{
     /// Returns the precomputed Late Move Reduction (LMR) value for a given depth and move number.
     ///
     /// # Arguments

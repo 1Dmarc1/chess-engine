@@ -210,7 +210,7 @@ impl MovePicker {
         for i in 0..self.moves.len {
             let mv = self.moves.moves[i];
 
-            let score = worker.history.score_capture(mv);
+            let score = worker.mv_history.score_capture(mv);
             let is_good = if Self::is_promising_capture(mv) {
                 true
             } else {
@@ -229,7 +229,7 @@ impl MovePicker {
     fn score_quiets(&mut self, worker: &SearchWorker) {
         for i in self.index..self.moves.len {
             let mv = self.moves.moves[i];
-            self.scores[i] = worker.history.score_quiet_move(mv, self.ply, &worker.stack);
+            self.scores[i] = worker.mv_history.score_quiet_move(mv, self.ply, &worker.search_stack);
         }
     }
 
