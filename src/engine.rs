@@ -64,7 +64,6 @@ impl Engine {
 
         // Setup thread contexts
         let thread_count = self.options.threads;
-        self.threads.clear(); // TODO: This has to be removed for the history scores to work correctly across searches
         while self.threads.len() < thread_count as usize {
             let id = self.threads.len() as u8;
             self.threads.push(Arc::new(Mutex::new(SearchThread::new(

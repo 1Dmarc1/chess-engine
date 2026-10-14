@@ -1,7 +1,7 @@
 use crate::board::bitboard::Bitboard;
 use crate::board::board_state::BoardState;
 use crate::board::fen_parser::{ParseError, parse_fen};
-use crate::board::history_stack::HistoryStack;
+use crate::board::undo_stack::UndoStack;
 use crate::board::transposition_table;
 use crate::search::evaluation;
 use crate::search::search_worker::nnue_diff::NNUEDiff;
@@ -19,7 +19,7 @@ pub struct GameState {
 
     pub hash: u64,
     pub ply: usize,
-    pub stack : HistoryStack,
+    pub stack : UndoStack,
 
     /// 0 - White, 1 - Black, 2 - All
     pub occupancy: [Bitboard; 3],
@@ -42,7 +42,7 @@ impl GameState {
 
             hash: 0,
             ply: 0,
-            stack: HistoryStack::new(),
+            stack: UndoStack::new(),
             occupancy: [Bitboard(0); 3],
         };
         state.refresh_occupancy_boards();
@@ -520,7 +520,7 @@ impl Default for GameState {
             fullmove_number: 0,
             hash: 0,
             ply: 0,
-            stack: HistoryStack::new(),
+            stack: UndoStack::new(),
             occupancy: [Bitboard(0); 3],
         };
         state.refresh_occupancy_boards();

@@ -1,7 +1,6 @@
-use std::time::Instant;
 use ruebli::board::game_state::GameState;
-use ruebli::board::transposition_table::Zobrist;
-use ruebli::move_gen::{generate_pseudo_legal_moves, MoveList};
+use ruebli::move_gen::{MoveList, generate_pseudo_legal_moves};
+use std::time::Instant;
 
 pub fn perft(state: &mut GameState, depth: usize) -> u64 {
     if depth == 0 {
