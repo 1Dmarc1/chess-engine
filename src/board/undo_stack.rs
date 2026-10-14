@@ -18,14 +18,14 @@ impl UndoInfo {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HistoryStack {
+pub struct UndoStack {
     entries: [UndoInfo; MAX_GAME_PLY],
     pub size: usize,
 }
 
-impl HistoryStack {
-    pub fn new() -> HistoryStack {
-        HistoryStack {
+impl UndoStack {
+    pub fn new() -> UndoStack {
+        UndoStack {
             entries: [UndoInfo::default(); MAX_GAME_PLY],
             size: 0,
         }
@@ -33,23 +33,22 @@ impl HistoryStack {
 
     #[inline(always)]
     pub fn push(&mut self, hash: u64, half_mv_clk: u16, castle: u8, en_passant: Option<usize>) {
-        self.entries[self.size] = UndoInfo {
-            hash,
-            half_move_clock: half_mv_clk,
-            castling_rights: castle,
-            en_passant_sq: en_passant.unwrap_or(NO_SQUARE as usize) as u8,
-        };
+        let entry = &mut self.entries[self.size];
+        entry.hash = hash;
+        entry.half_move_clock = half_mv_clk;
+        entry.castling_rights  = castle;
+        entry.en_passant_sq = en_passant.unwrap_or(NO_SQUARE as usize) as u8;
         self.size += 1;
     }
 
     #[inline(always)]
-    pub fn pop(&mut self) -> UndoInfo {
+    pub fn pop(&mut self) -> &UndoInfo {
         self.size -= 1;
-        self.entries[self.size]
+        &self.entries[self.size]
     }
 
     #[inline(always)]
-    pub fn get(&self, index: usize) -> UndoInfo {
-        self.entries[index]
+    pub fn get(&self, index: usize) -> &UndoInfo {
+        &self.entries[index]
     }
 }

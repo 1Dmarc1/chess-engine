@@ -210,7 +210,7 @@ impl MovePicker {
         for i in 0..self.moves.len {
             let mv = self.moves.moves[i];
 
-            let mvv_lva = evaluation::mvv_lva(mv);
+            let score = worker.mv_history.score_capture(mv);
             let is_good = if Self::is_promising_capture(mv) {
                 true
             } else {
@@ -218,20 +218,18 @@ impl MovePicker {
             };
             const GOOD: i32 = 10_000_000;
             self.scores[i] = if is_good {
-                mvv_lva + GOOD
+                score + GOOD
             } else {
-                mvv_lva - GOOD
+                score - GOOD
             };
         }
     }
 
     #[inline]
     fn score_quiets(&mut self, worker: &SearchWorker) {
-        let side_idx = worker.state.board.side_to_move as usize;
-
         for i in self.index..self.moves.len {
             let mv = self.moves.moves[i];
-            self.scores[i] = worker.history.score_quiet_move(mv, side_idx, self.ply, &worker.stack);
+            self.scores[i] = worker.mv_history.score_quiet_move(mv, self.ply, &worker.search_stack);
         }
     }
 
