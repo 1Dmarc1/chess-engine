@@ -8,7 +8,7 @@ use crate::types::{Move, piece};
 
 impl SearchWorker<'_> {
     pub(crate) fn negamax(&mut self, mut depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
-        if self.is_time_up() || ply > 0 && self.state.is_repetition() || self.state.halfmove_clock >= 100 {
+        if self.should_stop_search() || ply > 0 && self.state.is_repetition() || self.state.halfmove_clock >= 100 {
             return 0;
         }
 
@@ -98,7 +98,7 @@ impl SearchWorker<'_> {
 
             self.undo_move(mv);
 
-            if self.is_time_up() {
+            if self.should_stop_search() {
                 return 0;
             }
 
@@ -171,7 +171,7 @@ impl SearchWorker<'_> {
 
         // If the reduced null window search beat alpha verify at full depth
         if eval > alpha && reduction > 0 {
-            if self.is_time_up() {
+            if self.should_stop_search() {
                 return 0;
             }
             eval = -self.negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
@@ -179,7 +179,7 @@ impl SearchWorker<'_> {
 
         // If its a pv node, research at full depth if necessary
         if is_pv && eval > alpha && eval < beta {
-            if self.is_time_up() {
+            if self.should_stop_search() {
                 return 0;
             }
             eval = -self.negamax(depth - 1, ply + 1, -beta, -alpha);
@@ -271,7 +271,7 @@ impl SearchWorker<'_> {
                 let null_eval = -self.negamax((depth - 1 - r).max(0), ply + 1, -beta, -beta + 1);
                 self.undo_null_move();
 
-                if self.is_time_up() {
+                if self.should_stop_search() {
                     return Some(0);
                 }
 

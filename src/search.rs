@@ -4,3 +4,4 @@ pub mod search_worker;
 pub mod history_table;
 pub mod search_thread;
 pub mod search_params;
+pub mod time_manager;

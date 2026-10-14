@@ -68,4 +68,7 @@ define_search_params! {
     qsearch_see_margin : i32 = (288, 0, 500),
     qsearch_see_threshold_floor : i32 = (-69, -100, 100),
     qsearch_max_ply : usize = (61, 16, 128),
+
+    // Time control
+    search_overhead_ms : u64 = (30, 0, 500),
 }

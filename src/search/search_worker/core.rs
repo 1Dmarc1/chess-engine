@@ -8,6 +8,7 @@ use crate::search::history_table::HistoryTable;
 use crate::search::search_params::SearchParams;
 use crate::search::search_thread::SharedThreadData;
 use crate::search::search_worker::nnue_diff::NNUEDiff;
+use crate::search::time_manager::SearchLimits;
 use crate::types::Move;
 
 #[repr(C, align(64))]
@@ -58,6 +59,7 @@ pub struct SearchWorker<'a> {
     // TODO: Move to stack
     accumulator_map: [usize; globals::MAX_SEARCH_PLY], // Defines for which ply which accumulator should be accessed
     pub mv_history:  &'a mut HistoryTable,
+    limits : SearchLimits,
 
 }
 
@@ -66,6 +68,7 @@ impl<'a> SearchWorker<'a> {
         shared_data : &SharedThreadData,
         state: GameState,
         move_history : &'a mut HistoryTable,
+        limits : SearchLimits
     ) -> Self {
         let mut stack = std::array::from_fn(|_| SearchStackEntry::new(&*shared_data.network));
         stack[0].accumulator = shared_data.network.accumulator(&state.board);
@@ -81,6 +84,7 @@ impl<'a> SearchWorker<'a> {
             accumulator_map: std::array::from_fn(|i| i),
             mv_history: move_history,
             nodes: 0,
+            limits,
         }
     }
 
@@ -125,8 +129,11 @@ impl<'a> SearchWorker<'a> {
     }
 
     #[inline(always)]
-    pub fn is_time_up(&self) -> bool {
-        self.should_stop.load(Ordering::Relaxed)
+    pub fn should_stop_search(&self) -> bool {
+        if self.nodes % 2048 == 0{
+            return self.should_stop.load(Ordering::Relaxed) || self.limits.hard_expired();
+        }
+        false
     }
 
     #[inline]

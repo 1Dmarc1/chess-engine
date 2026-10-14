@@ -1,7 +1,8 @@
 use crate::board::game_state::GameState;
-use crate::search::search_thread::{SearchThread, SharedThreadData};
-use crate::types::Move;
 use crate::move_gen;
+use crate::search::search_thread::{SearchThread, SharedThreadData};
+use crate::search::time_manager::SearchLimits;
+use crate::types::Move;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -26,7 +27,7 @@ pub struct Engine {
     pub(crate) state: GameState,
     pub(crate) thread_data: Arc<SharedThreadData>,
     threads: Vec<Arc<Mutex<SearchThread>>>,
-    is_searching : Arc<AtomicBool>,
+    is_searching: Arc<AtomicBool>,
 }
 
 impl Engine {
@@ -35,9 +36,7 @@ impl Engine {
 
         let tmp = Engine {
             options: EngineOptions::default(),
-            thread_data: Arc::new(
-                SharedThreadData::default()
-            ),
+            thread_data: Arc::new(SharedThreadData::default()),
             state: GameState::default(),
             threads: Vec::new(),
             is_searching: Arc::new(AtomicBool::new(false)),
@@ -56,7 +55,7 @@ impl Engine {
         self.thread_data.stop.store(true, Ordering::Relaxed);
     }
 
-    pub fn start_search(&mut self, allocated_time: Option<Duration>, max_depth: i32) {
+    pub fn start_search(&mut self, search_limits: SearchLimits) {
         if self.is_searching.load(Ordering::Relaxed) {
             eprintln!("Warning: Ignored 'go' because engine is already searching.");
             return;
@@ -66,28 +65,14 @@ impl Engine {
         let thread_count = self.options.threads;
         while self.threads.len() < thread_count as usize {
             let id = self.threads.len() as u8;
-            self.threads.push(Arc::new(Mutex::new(SearchThread::new(
-                id,
-                self.thread_data.clone(),
-            ))));
+            self.threads.push(Arc::new(Mutex::new(SearchThread::new(id, self.thread_data.clone()))));
         }
         self.threads.truncate(thread_count as usize);
-
 
         self.thread_data.tt.inc_generation();
 
         self.thread_data.stop.store(false, Ordering::Relaxed); // Reset the stop flag
         self.is_searching.store(true, Ordering::Relaxed); // Set is searching to true
-
-        let stop_for_timer = Arc::clone(&self.thread_data.stop);
-
-        // Spawn a timer thread
-        if let Some(time_limit) = allocated_time {
-            thread::spawn(move || {
-                thread::sleep(time_limit);
-                stop_for_timer.store(true, Ordering::Relaxed); // Set the flag when time expired
-            });
-        }
 
         // Create copies for the thread to use
         let threads = self.threads.clone();
@@ -96,7 +81,7 @@ impl Engine {
 
         // Spawn the search thread
         thread::spawn(move || {
-            let best_move = Self::run_multithreaded_search(state_clone, max_depth, threads);
+            let best_move = Self::run_multithreaded_search(state_clone, search_limits, threads);
 
             if let Some(mv) = best_move {
                 println!("bestmove {}", mv.to_uci().unwrap_or(String::from("")));
@@ -108,14 +93,14 @@ impl Engine {
         });
     }
 
-    pub fn run_multithreaded_search(state: GameState, max_depth: i32, threads: Vec<Arc<Mutex<SearchThread>>>) -> Option<Move> {
+    pub fn run_multithreaded_search(state: GameState, search_limits: SearchLimits, threads: Vec<Arc<Mutex<SearchThread>>>) -> Option<Move> {
         let mut handles = Vec::new();
 
-        for thread in threads{
+        for thread in threads {
             let ctx = Arc::clone(&thread);
             let worker_state = state.clone();
 
-            let handle = thread::spawn(move || ctx.lock().unwrap().run(worker_state.clone(), max_depth));
+            let handle = thread::spawn(move || ctx.lock().unwrap().run(worker_state.clone(), search_limits));
 
             handles.push(handle);
         }

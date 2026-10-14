@@ -46,7 +46,7 @@ impl SearchWorker<'_> {
     /// Tactical Quiescence Search
     pub(crate) fn quiescence(&mut self, mut alpha: i32, beta: i32, ply: usize) -> i32 {
         self.nodes += 1;
-        if self.is_time_up() {
+        if self.should_stop_search() {
             return 0;
         }
         if ply >= self.params.qsearch_max_ply {
@@ -102,7 +102,7 @@ impl SearchWorker<'_> {
             }
             let score = -self.quiescence(-beta, -alpha, ply + 1);
             self.undo_move(mv);
-            if self.is_time_up() {
+            if self.should_stop_search() {
                 return 0;
             }
 
@@ -143,7 +143,7 @@ impl SearchWorker<'_> {
                 -self.negamax(depth - 1, 1, -beta, -alpha)
             } else {
                 let e = -self.negamax(depth - 1, 1, -alpha - 1, -alpha);
-                if e > alpha && e < beta && !self.is_time_up() {
+                if e > alpha && e < beta && !self.should_stop_search() {
                     -self.negamax(depth - 1, 1, -beta, -alpha)
                 } else {
                     e
@@ -152,7 +152,7 @@ impl SearchWorker<'_> {
             self.undo_move(mv);
             searched += 1;
 
-            if self.is_time_up() {
+            if self.should_stop_search() {
                 if prev_best_move.is_none() {
                     break;
                 }

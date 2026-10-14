@@ -9,6 +9,7 @@ use crate::types::{Move, MoveType};
 use std::str::SplitWhitespace;
 use std::sync::Arc;
 use std::time::Duration;
+use crate::search::time_manager::SearchLimits;
 
 /// Handles incoming uci commands. Returns true if the engine should quit.
 pub fn handle_uci_command(line: &str, engine: &mut Engine) -> bool {
@@ -75,13 +76,13 @@ fn parse_position(tokens: &mut SplitWhitespace, engine: &mut Engine) {
 
 fn parse_go(tokens: &mut SplitWhitespace, engine: &mut Engine) {
     let mut depth_limit = globals::MAX_SEARCH_PLY as i32;
-    let mut allocated_time_ms: Option<u64> = None;
+    let mut allocated_time_ms: Option<Duration> = None;
 
     let mut wtime: Option<u64> = None;
     let mut btime: Option<u64> = None;
     let mut winc: u64 = 0;
     let mut binc: u64 = 0;
-    let mut movestogo: u64 = 30;
+    let mut movestogo: u32 = 30;
     let mut infinite = false;
 
     while let Some(token) = tokens.next() {
@@ -93,7 +94,7 @@ fn parse_go(tokens: &mut SplitWhitespace, engine: &mut Engine) {
             }
             "movetime" => {
                 if let Some(t) = tokens.next().and_then(|s| s.parse().ok()) {
-                    allocated_time_ms = Some(t);
+                    allocated_time_ms = Some(Duration::from_millis(t));
                 }
             }
             "wtime" => wtime = tokens.next().and_then(|s| s.parse().ok()),
@@ -110,30 +111,23 @@ fn parse_go(tokens: &mut SplitWhitespace, engine: &mut Engine) {
         }
     }
 
-    let duration = if infinite {
-        None
+    let margin = engine.thread_data.search_params.search_overhead_ms;
+    let limits : SearchLimits = if infinite {
+        SearchLimits::infinite()
     } else if let Some(t) = allocated_time_ms {
-        let time = t.saturating_sub(150).max(5);
-        Some(Duration::from_millis(time))
-    } else {
+        SearchLimits::from_movetime(t, Duration::from_millis(margin), depth_limit)
+    } else if wtime.is_some() && btime.is_some() {
         let (time, inc) = if engine.state.board.side_to_move == PieceColor::White {
-            (wtime, winc)
+            (wtime, Duration::from_millis(winc))
         } else {
-            (btime, binc)
+            (btime, Duration::from_millis(binc))
         };
-
-        time.map(|t| {
-            let m2g = movestogo.max(1);
-            let time_for_move = (t / m2g) + (inc * 3 / 4);
-
-            let overhead = 150;
-            let max_safe_time = t.saturating_sub(overhead);
-            let final_time_ms = time_for_move.min(max_safe_time).max(5);
-            Duration::from_millis(final_time_ms)
-        })
+        SearchLimits::from_clock(Duration::from_millis(time.unwrap()), inc, Some(movestogo), Duration::from_millis(margin), depth_limit)
+    }else{
+        SearchLimits::from_depth(depth_limit)
     };
 
-    engine.start_search(duration, depth_limit);
+    engine.start_search(limits);
 }
 
 fn parse_uci_move(state: &GameState, move_str: &str) -> Option<Move> {
