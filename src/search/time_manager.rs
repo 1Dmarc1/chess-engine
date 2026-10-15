@@ -24,11 +24,11 @@ impl TimeManager {
     pub fn update_best_move(&mut self, mv: Move, score: i32) {
         if Some(mv) != self.prev_best {
             self.prev_best = Some(mv);
-            self.prev_score = score;
             self.stable = 0;
         } else {
             self.stable += 1;
         }
+        self.prev_score = score;
     }
 
     pub fn should_continue(&self) -> bool {
