@@ -70,5 +70,5 @@ define_search_params! {
     qsearch_max_ply : usize = (61, 16, 128),
 
     // Time control
-    search_overhead_ms : u64 = (10, 0, 500),
+    search_overhead_ms : u64 = (5, 0, 500),
 }
