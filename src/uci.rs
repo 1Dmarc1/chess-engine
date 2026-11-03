@@ -116,7 +116,7 @@ fn parse_go(tokens: &mut SplitWhitespace, engine: &mut Engine) {
         SearchLimits::infinite()
     } else if let Some(t) = allocated_time_ms {
         SearchLimits::from_movetime(t, Duration::from_millis(margin), depth_limit)
-    } else if wtime.is_some() && btime.is_some() {
+    } else if wtime.is_some() || btime.is_some() {
         let (time, inc) = if engine.state.board.side_to_move == PieceColor::White {
             (wtime, Duration::from_millis(winc))
         } else {
